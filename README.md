@@ -29,7 +29,63 @@ Plataforma de Retrieval-Augmented Generation (RAG) voltada ao diagnóstico de fa
 
 ## Setup
 
-> Em construção
+### Pré-requisitos
+
+- Docker Engine 24+ e Docker Compose v2
+- `make`
+- ~4 GB de RAM livre para a stack completa
+
+### Subindo a stack
+
+```bash
+# 1. Clone o repositório
+git clone <url-do-repo> && cd aiops-industry
+
+# 2. Crie o arquivo de variáveis de ambiente
+cp .env.example .env
+# Edite .env se quiser alterar senhas
+
+# 3. Suba todos os serviços
+make up
+```
+
+### URLs dos serviços
+
+| Serviço | URL | Descrição |
+|---------|-----|-----------|
+| MinIO Console | http://localhost:9001 | Interface web do data lake (Bronze) |
+| MinIO API | http://localhost:9000 | Endpoint S3-compatible |
+| Adminer | http://localhost:8080 | UI web para o PostgreSQL (Silver) |
+| MLflow | http://localhost:5000 | Tracking de experimentos |
+| Milvus gRPC | localhost:19530 | Banco vetorial (Gold) |
+| Milvus métricas | http://localhost:9091 | Health/metrics do Milvus |
+
+**Credenciais padrão MinIO:** `minioadmin / minioadmin123`  
+**Credenciais padrão PostgreSQL:** host `localhost:5432`, usuário `aiops`, banco `aiops_industry`  
+**Adminer:** selecione "PostgreSQL", servidor `postgres`, usuário/senha do `.env`
+
+### Verificando a saúde dos serviços
+
+```bash
+# Status resumido
+make status
+
+# Logs em tempo real
+make logs
+
+# Healthcheck individual (exemplo)
+docker inspect --format='{{.State.Health.Status}}' aiops-postgres
+```
+
+### Parando e limpando
+
+```bash
+# Para containers (mantém volumes)
+make down
+
+# Para containers E remove todos os dados
+make clean
+```
 
 ---
 

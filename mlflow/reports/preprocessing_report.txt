@@ -1,0 +1,25 @@
+============================================================
+  PREPROCESSING REPORT — AIOps Industry (Sprint 4)
+============================================================
+
+Total de linhas: 874,145
+
+--- Distribuição de Labels ---
+  info       (label=0):  273,133  ( 31.2%)
+  warning    (label=1):  498,220  ( 57.0%)
+  critical   (label=2):  102,792  ( 11.8%)
+
+--- Estatísticas por Feature ---
+  Feature                   min          max         mean    nulls
+  ----------------------------------------------------------------
+  alarm_code_num           0.00       153.00      39.7845        0
+  machine_num              0.00        19.00       5.3384        0
+  source_num               0.00         1.00       0.4912        0
+  hour_of_day              0.00        23.00      11.2418        0
+  day_of_week              0.00         6.00       3.1076        0
+  alarm_frequency          1.00    337310.00  157342.8954        0
+  duration_ms              0.00  79290078.00  181743.2964        0
+
+--- Fontes ---
+  ALPI: 444,751 linhas
+  PIADE: 429,394 linhas

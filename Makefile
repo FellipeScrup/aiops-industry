@@ -3,7 +3,8 @@ COMPOSE := docker compose -f infra/docker/docker-compose.yml --env-file .env
 .DEFAULT_GOAL := help
 
 .PHONY: help up down logs ps restart clean status \
-        create-tables ingest-bronze ingest-silver ingest-all
+        create-tables ingest-bronze ingest-silver ingest-all \
+        preprocess train
 
 help: ## Exibe esta mensagem de ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -52,3 +53,11 @@ ingest-silver: ## Processa Bronze → Silver (normaliza e persiste no PostgreSQL
 	python ingestion/parse_silver.py
 
 ingest-all: create-tables ingest-bronze ingest-silver ## Pipeline completo: tabelas → Bronze → Silver
+
+# ── Modelagem ML ─────────────────────────────────────────────────────────────
+
+preprocess: ## Pré-processa os dados Silver para ML (gera data/silver/processed_logs.parquet)
+	pip install -q -r mlflow/requirements.txt && python mlflow/preprocess.py
+
+train: preprocess ## Treina XGBoost após pré-processamento e registra no MLflow
+	MLFLOW_S3_ENDPOINT_URL=http://localhost:9000 python mlflow/train.py

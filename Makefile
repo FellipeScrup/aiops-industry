@@ -2,7 +2,8 @@ COMPOSE := docker compose -f infra/docker/docker-compose.yml --env-file .env
 
 .DEFAULT_GOAL := help
 
-.PHONY: help up down logs ps restart clean status
+.PHONY: help up down logs ps restart clean status \
+        create-tables ingest-bronze ingest-silver ingest-all
 
 help: ## Exibe esta mensagem de ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -35,3 +36,19 @@ clean: ## Para os containers E remove todos os volumes de dados (destrutivo)
 
 status: ## Exibe status dos serviços com portas expostas
 	@$(COMPOSE) ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+
+# ── Ingestão Medallion ──────────────────────────────────────────────────────
+
+create-tables: ## Cria tabelas logs e alarm_dictionary no PostgreSQL
+	@set -a && . ./.env && set +a && \
+	docker exec -i aiops-postgres psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" \
+	  < ingestion/create_tables.sql && \
+	echo "  Tabelas criadas."
+
+ingest-bronze: ## Sobe CSVs brutos para o MinIO (Bronze layer)
+	python ingestion/upload_bronze.py
+
+ingest-silver: ## Processa Bronze → Silver (normaliza e persiste no PostgreSQL)
+	python ingestion/parse_silver.py
+
+ingest-all: create-tables ingest-bronze ingest-silver ## Pipeline completo: tabelas → Bronze → Silver

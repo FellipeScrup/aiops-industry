@@ -7,7 +7,8 @@ COMPOSE := docker compose -f infra/docker/docker-compose.yml --env-file .env
         preprocess train \
         embed test-retrieval \
         rag-query \
-        api ui serve
+        api ui serve \
+        seed-dictionary
 
 help: ## Exibe esta mensagem de ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -56,6 +57,9 @@ ingest-silver: ## Processa Bronze → Silver (normaliza e persiste no PostgreSQL
 	python ingestion/parse_silver.py
 
 ingest-all: create-tables ingest-bronze ingest-silver ## Pipeline completo: tabelas → Bronze → Silver
+
+seed-dictionary: ## Gera dicionário de alarmes via Ollama (top 50)
+	python ingestion/seed_dictionary.py
 
 # ── Modelagem ML ─────────────────────────────────────────────────────────────
 

@@ -17,24 +17,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def query(user_input: str, top_k: int = 5) -> dict:
+def query(user_input: str, top_k: int = 5, model: str = "llama3.2:3b") -> dict:
     """Run the full RAG pipeline for a technician query.
 
     Args:
         user_input: Natural language question.
         top_k: Number of similar logs to retrieve.
+        model: LLM model identifier (Ollama name or "gemini").
 
     Returns:
-        Dict with keys: question, context, answer, retrieval_scores.
+        Dict with keys: question, context, answer, retrieval_scores, model_used.
     """
-    logger.info("Iniciando pipeline RAG para: %r", user_input)
+    logger.info("Iniciando pipeline RAG para: %r (model=%s)", user_input, model)
     context = retrieve(user_input, top_k=top_k)
-    answer = generate(user_input, context)
+    answer = generate(user_input, context, model=model)
     return {
         "question": user_input,
         "context": context,
         "answer": answer,
         "retrieval_scores": [hit["score"] for hit in context],
+        "model_used": model,
     }
 
 

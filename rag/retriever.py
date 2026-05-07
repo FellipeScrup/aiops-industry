@@ -1,8 +1,9 @@
-"""Sprint 6 — RAG retriever: embed query and search Milvus."""
+"""Sprint 6 — RAG retriever: embed query, search Milvus, enrich with alarm_dictionary."""
 
 import logging
 import os
 
+import psycopg2
 import requests
 from dotenv import load_dotenv
 from pymilvus import Collection, connections
@@ -17,6 +18,12 @@ COLLECTION_NAME: str = "alarm_logs"
 
 OLLAMA_BASE: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_MODEL: str = "nomic-embed-text"
+
+POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
+POSTGRES_DB: str = os.getenv("POSTGRES_DB", "aiops_industry")
+POSTGRES_USER: str = os.getenv("POSTGRES_USER", "aiops")
+POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "")
 
 # Lazy singleton — connects and loads collection once per process.
 _collection: Collection | None = None
@@ -88,7 +95,59 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
             "severity": hit.entity.get("severity", ""),
             "log_text": hit.entity.get("log_text", ""),
             "score": float(hit.score),
+            "dict_title": None,
+            "dict_description": None,
+            "dict_probable_causes": None,
+            "dict_corrective_actions": None,
         })
+
+    _enrich_with_dictionary(hits)
 
     logger.info("Recuperados %d resultados.", len(hits))
     return hits
+
+
+def _enrich_with_dictionary(hits: list[dict]) -> None:
+    """Query alarm_dictionary for each unique alarm_code and enrich hits in-place."""
+    unique_codes = {h["alarm_code"] for h in hits if h["alarm_code"]}
+    if not unique_codes:
+        return
+
+    try:
+        conn = psycopg2.connect(
+            host=POSTGRES_HOST,
+            port=int(POSTGRES_PORT),
+            dbname=POSTGRES_DB,
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD,
+        )
+    except Exception as exc:
+        logger.warning("Não foi possível conectar ao PostgreSQL para enriquecer resultados: %s", exc)
+        return
+
+    dict_cache: dict[str, dict] = {}
+    try:
+        with conn, conn.cursor() as cur:
+            for code in unique_codes:
+                cur.execute(
+                    "SELECT title, description, probable_causes, corrective_actions, severity "
+                    "FROM alarm_dictionary WHERE alarm_code = %s LIMIT 1",
+                    (code,),
+                )
+                row = cur.fetchone()
+                if row:
+                    dict_cache[code] = {
+                        "dict_title": row[0],
+                        "dict_description": row[1],
+                        "dict_probable_causes": row[2],
+                        "dict_corrective_actions": row[3],
+                    }
+    except Exception as exc:
+        logger.warning("Erro ao consultar alarm_dictionary: %s", exc)
+    finally:
+        conn.close()
+
+    for hit in hits:
+        entry = dict_cache.get(hit["alarm_code"])
+        if entry:
+            hit.update(entry)

@@ -6,7 +6,8 @@ COMPOSE := docker compose -f infra/docker/docker-compose.yml --env-file .env
         create-tables ingest-bronze ingest-silver ingest-all \
         preprocess train \
         embed test-retrieval \
-        rag-query
+        rag-query \
+        api ui serve
 
 help: ## Exibe esta mensagem de ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -76,3 +77,14 @@ test-retrieval: ## Testa busca vetorial no Milvus (uso: make test-retrieval QUER
 
 rag-query: ## Consulta o RAG (uso: make rag-query QUERY="alarme 139")
 	PYTHONPATH=. python rag/pipeline.py "$(QUERY)"
+
+# ── API + Interface ───────────────────────────────────────────────────────────
+
+api: ## Sobe a FastAPI em localhost:8001
+	PYTHONPATH=. uvicorn api.main:app --host 0.0.0.0 --port 8001 --reload
+
+ui: ## Sobe a interface Gradio em localhost:7860
+	PYTHONPATH=. python interface/app.py
+
+serve: ## Sobe API + UI juntos (2 processos em background)
+	make api & make ui

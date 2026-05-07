@@ -4,7 +4,8 @@ COMPOSE := docker compose -f infra/docker/docker-compose.yml --env-file .env
 
 .PHONY: help up down logs ps restart clean status \
         create-tables ingest-bronze ingest-silver ingest-all \
-        preprocess train
+        preprocess train \
+        embed test-retrieval
 
 help: ## Exibe esta mensagem de ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -61,3 +62,11 @@ preprocess: ## Pré-processa os dados Silver para ML (gera data/silver/processed
 
 train: preprocess ## Treina XGBoost após pré-processamento e registra no MLflow
 	MLFLOW_S3_ENDPOINT_URL=http://localhost:9000 python mlflow/train.py
+
+# ── Embeddings Gold ──────────────────────────────────────────────────────────
+
+embed: ## Gera embeddings e indexa no Milvus (Gold layer)
+	EMBED_LIMIT=50000 python ingestion/embed_gold.py
+
+test-retrieval: ## Testa busca vetorial no Milvus (uso: make test-retrieval QUERY="falha motor")
+	python ingestion/test_retrieval.py "$(QUERY)"

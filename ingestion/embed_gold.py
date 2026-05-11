@@ -1,19 +1,18 @@
-"""Sprint 5 — Silver → Gold: embedding pipeline.
+"""Silver → Gold: embedding pipeline.
 
 Reads logs from PostgreSQL, stratified-samples EMBED_LIMIT rows,
-generates 768-dim embeddings via Ollama (nomic-embed-text), and
-indexes them in Milvus. Supports checkpoint-based resumption.
+generates 768-dim embeddings via fastembed (nomic-embed-text-v1.5),
+and indexes them in Milvus. Supports checkpoint-based resumption.
 """
 
 import logging
 import os
-import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import requests
 from dotenv import load_dotenv
+from fastembed import TextEmbedding
 from pymilvus import (
     Collection,
     CollectionSchema,
@@ -45,14 +44,34 @@ MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
 COLLECTION_NAME: str = "alarm_logs"
 
-OLLAMA_BASE: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-EMBED_MODEL: str = "nomic-embed-text"
+EMBED_MODEL_NAME: str = "nomic-ai/nomic-embed-text-v1.5"
 EMBED_DIM: int = 768
 
 EMBED_LIMIT: int = int(os.getenv("EMBED_LIMIT", "50000"))
+EMBED_BATCH: int = 256   # textos por lote de embedding
 MILVUS_BATCH: int = 500
 LOG_EVERY: int = 1000
 CHECKPOINT_PATH: Path = Path("ingestion/.embed_checkpoint")
+
+
+# ── Fastembed ────────────────────────────────────────────────────────────────
+
+_embed_model: TextEmbedding | None = None
+
+
+def _get_embed_model() -> TextEmbedding:
+    global _embed_model
+    if _embed_model is None:
+        logger.info("Carregando modelo de embedding '%s'...", EMBED_MODEL_NAME)
+        _embed_model = TextEmbedding(model_name=EMBED_MODEL_NAME)
+        logger.info("Modelo carregado.")
+    return _embed_model
+
+
+def _embed_batch(texts: list[str]) -> list[list[float]]:
+    model = _get_embed_model()
+    embeddings = list(model.embed(texts))
+    return [e.tolist() for e in embeddings]
 
 
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
@@ -66,7 +85,6 @@ def _build_engine() -> Engine:
 
 
 def _load_and_label(engine: Engine) -> pd.DataFrame:
-    """Load logs from Silver and assign severity labels."""
     logger.info("Carregando logs do PostgreSQL...")
     query = text("""
         SELECT source, machine_id, alarm_code, event_type, duration_ms, raw_timestamp
@@ -78,7 +96,6 @@ def _load_and_label(engine: Engine) -> pd.DataFrame:
 
 
 def _assign_severity(df: pd.DataFrame) -> pd.DataFrame:
-    """Same severity rules as mlflow/preprocess.py (alarm_frequency computed globally)."""
     freq = df["alarm_code"].value_counts()
     df = df.copy()
     df["alarm_frequency"] = df["alarm_code"].map(freq)
@@ -102,7 +119,6 @@ def _assign_severity(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _stratified_sample(df: pd.DataFrame, total: int) -> pd.DataFrame:
-    """Proportional stratified sample, deterministic (random_state=42)."""
     dist = df["severity"].value_counts(normalize=True)
     frames: list[pd.DataFrame] = []
     for sev, frac in dist.items():
@@ -130,7 +146,6 @@ def _connect_milvus() -> None:
 
 
 def _ensure_collection() -> Collection:
-    """Create collection if absent — idempotent."""
     if utility.has_collection(COLLECTION_NAME):
         logger.info("Collection '%s' já existe. Pulando criação.", COLLECTION_NAME)
         return Collection(COLLECTION_NAME)
@@ -152,7 +167,6 @@ def _ensure_collection() -> Collection:
 
 
 def _flush_batch(collection: Collection, buf: dict[str, list]) -> None:
-    # ORM Collection.insert() expects List[List] in schema field order, not dict[str, list]
     data = [
         buf["source"],
         buf["machine_id"],
@@ -187,35 +201,12 @@ def _build_index_and_load(collection: Collection) -> None:
     )
 
 
-# ── Ollama ────────────────────────────────────────────────────────────────────
-
-def _embed_with_retry(log_text: str) -> list[float] | None:
-    """Request embedding from Ollama, retrying up to 3× on ConnectionError."""
-    for attempt in range(3):
-        try:
-            resp = requests.post(
-                f"{OLLAMA_BASE}/api/embeddings",
-                json={"model": EMBED_MODEL, "prompt": log_text},
-                timeout=120,
-            )
-            resp.raise_for_status()
-            return resp.json()["embedding"]
-        except requests.ConnectionError:
-            wait = 5
-            logger.warning(
-                "Ollama indisponível (tentativa %d/3). Aguardando %ds...",
-                attempt + 1,
-                wait,
-            )
-            if attempt < 2:
-                time.sleep(wait)
-    logger.error("Ollama não respondeu após 3 tentativas. Pulando registro.")
-    return None
-
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _build_log_text(row: pd.Series) -> str:
     event = row["event_type"] if pd.notna(row["event_type"]) else "N/A"
     return (
+        f"search_document: "
         f"Alarme {row['alarm_code']} | "
         f"Máquina {row['machine_id']} | "
         f"Fonte {row['source']} | "
@@ -244,11 +235,6 @@ def _write_checkpoint(offset: int) -> None:
 # ── Pipeline ──────────────────────────────────────────────────────────────────
 
 def _run_pipeline(df: pd.DataFrame, collection: Collection) -> None:
-    """Main embedding loop with checkpoint and batched Milvus inserts.
-
-    Checkpoint tracks rows iterated (not rows inserted) so failed Ollama
-    calls don't cause duplicate inserts on restart.
-    """
     offset = _read_checkpoint()
     total = len(df)
 
@@ -264,53 +250,56 @@ def _run_pipeline(df: pd.DataFrame, collection: Collection) -> None:
         return
 
     remaining = df.iloc[offset:].reset_index(drop=True)
-
-    buf: dict[str, list] = {
+    milvus_buf: dict[str, list] = {
         "source": [], "machine_id": [], "alarm_code": [],
         "event_type": [], "severity": [], "log_text": [], "embedding": [],
     }
-    milvus_inserted: int = offset
+    total_inserted = offset
 
-    for local_i, row in remaining.iterrows():
-        abs_pos: int = offset + int(local_i) + 1  # 1-indexed position in full sample_df
+    for batch_start in range(0, len(remaining), EMBED_BATCH):
+        batch = remaining.iloc[batch_start: batch_start + EMBED_BATCH]
 
-        log_text = _build_log_text(row)
-        embedding = _embed_with_retry(log_text)
+        texts = [_build_log_text(row) for _, row in batch.iterrows()]
+        embeddings = _embed_batch(texts)
 
-        if embedding is not None:
+        for i, (_, row) in enumerate(batch.iterrows()):
             event = str(row["event_type"]) if pd.notna(row["event_type"]) else ""
-            buf["source"].append(str(row["source"])[:10])
-            buf["machine_id"].append(str(row["machine_id"])[:20])
-            buf["alarm_code"].append(str(row["alarm_code"])[:20])
-            buf["event_type"].append(event[:30])
-            buf["severity"].append(str(row["severity"])[:10])
-            buf["log_text"].append(log_text[:500])
-            buf["embedding"].append(embedding)
+            log_text = texts[i]
+            milvus_buf["source"].append(str(row["source"])[:10])
+            milvus_buf["machine_id"].append(str(row["machine_id"])[:20])
+            milvus_buf["alarm_code"].append(str(row["alarm_code"])[:20])
+            milvus_buf["event_type"].append(event[:30])
+            milvus_buf["severity"].append(str(row["severity"])[:10])
+            milvus_buf["log_text"].append(log_text[:500])
+            milvus_buf["embedding"].append(embeddings[i])
 
-        if len(buf["embedding"]) >= MILVUS_BATCH:
-            _flush_batch(collection, buf)
-            milvus_inserted += len(buf["embedding"])
+        abs_pos = offset + batch_start + len(batch)
+
+        if len(milvus_buf["embedding"]) >= MILVUS_BATCH:
+            _flush_batch(collection, milvus_buf)
+            total_inserted += len(milvus_buf["embedding"])
             _write_checkpoint(abs_pos)
             logger.info(
-                "Inseridos %d vetores no Milvus (total: %d)",
-                len(buf["embedding"]),
-                milvus_inserted,
+                "Inseridos %d vetores no Milvus (total: %d / %d)",
+                len(milvus_buf["embedding"]),
+                total_inserted,
+                total,
             )
-            for k in buf:
-                buf[k].clear()
+            for k in milvus_buf:
+                milvus_buf[k].clear()
 
-        if abs_pos % LOG_EVERY == 0:
+        if abs_pos % LOG_EVERY == 0 or abs_pos == total:
             pct = 100.0 * abs_pos / total
             logger.info("Processados: %d/%d (%.1f%%)", abs_pos, total, pct)
 
-    if buf["embedding"]:
-        _flush_batch(collection, buf)
-        milvus_inserted += len(buf["embedding"])
+    if milvus_buf["embedding"]:
+        _flush_batch(collection, milvus_buf)
+        total_inserted += len(milvus_buf["embedding"])
         _write_checkpoint(total)
         logger.info(
             "Inseridos %d vetores no Milvus (total: %d)",
-            len(buf["embedding"]),
-            milvus_inserted,
+            len(milvus_buf["embedding"]),
+            total_inserted,
         )
 
 
@@ -328,7 +317,7 @@ def main() -> None:
     _build_index_and_load(collection)
 
     logger.info(
-        "Sprint 5 concluída. Vetores indexados: %d",
+        "Pipeline concluído. Vetores indexados: %d",
         collection.num_entities,
     )
 

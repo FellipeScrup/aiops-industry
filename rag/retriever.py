@@ -4,8 +4,8 @@ import logging
 import os
 
 import psycopg2
-import requests
 from dotenv import load_dotenv
+from fastembed import TextEmbedding
 from pymilvus import Collection, connections
 
 load_dotenv()
@@ -16,8 +16,7 @@ MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
 COLLECTION_NAME: str = "alarm_logs"
 
-OLLAMA_BASE: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-EMBED_MODEL: str = "nomic-embed-text"
+EMBED_MODEL_NAME: str = "nomic-ai/nomic-embed-text-v1.5"
 
 POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
@@ -25,8 +24,9 @@ POSTGRES_DB: str = os.getenv("POSTGRES_DB", "aiops_industry")
 POSTGRES_USER: str = os.getenv("POSTGRES_USER", "aiops")
 POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "")
 
-# Lazy singleton — connects and loads collection once per process.
+# Lazy singletons
 _collection: Collection | None = None
+_embed_model: TextEmbedding | None = None
 
 
 def _get_collection() -> Collection:
@@ -39,14 +39,20 @@ def _get_collection() -> Collection:
     return _collection
 
 
+def _get_embed_model() -> TextEmbedding:
+    global _embed_model
+    if _embed_model is None:
+        _embed_model = TextEmbedding(model_name=EMBED_MODEL_NAME)
+        logger.info("Modelo de embedding '%s' carregado.", EMBED_MODEL_NAME)
+    return _embed_model
+
+
 def _embed_query(query: str) -> list[float]:
-    resp = requests.post(
-        f"{OLLAMA_BASE}/api/embeddings",
-        json={"model": EMBED_MODEL, "prompt": query},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()["embedding"]
+    model = _get_embed_model()
+    # nomic-embed-text-v1.5 usa prefixo "search_query:" para queries
+    prefixed = f"search_query: {query}"
+    embeddings = list(model.embed([prefixed]))
+    return embeddings[0].tolist()
 
 
 def retrieve(query: str, top_k: int = 5) -> list[dict]:
@@ -64,9 +70,9 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
 
     try:
         embedding = _embed_query(query)
-    except requests.ConnectionError as exc:
+    except Exception as exc:
         raise ConnectionError(
-            f"Ollama indisponível em {OLLAMA_BASE}. Verifique se o serviço está rodando."
+            f"Erro ao gerar embedding: {exc}"
         ) from exc
 
     try:

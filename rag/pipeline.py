@@ -22,7 +22,7 @@ def query(user_input: str, top_k: int = 5, model: str = "llama3.2:3b") -> dict:
 
     Args:
         user_input: Natural language question.
-        top_k: Number of similar logs to retrieve.
+        top_k: Number of similar telemetry windows to retrieve.
         model: LLM model identifier (Ollama name or "gemini").
 
     Returns:
@@ -51,13 +51,15 @@ if __name__ == "__main__":
     print(f"PERGUNTA: {result['question']}")
     print("=" * 60)
 
-    print("\nLOGS RECUPERADOS:")
+    print("\nJANELAS DE TELEMETRIA RECUPERADAS:")
     for rank, hit in enumerate(result["context"], start=1):
         print(
             f"  Rank {rank} (score: {hit['score']:.4f}):"
-            f" Alarme {hit['alarm_code']}"
-            f" | Máquina {hit['machine_id']}"
-            f" | {hit['severity']}"
+            f" Máquina {hit['machine_id']}"
+            f" | Janela {hit['interval_start']}"
+            f" | Downtime {hit['pct_downtime'] * 100:.1f}%"
+            f" | Idle {hit['pct_idle'] * 100:.1f}%"
+            f" | Perf. Loss {hit['pct_perf_loss'] * 100:.1f}%"
         )
 
     print("\nRESPOSTA DO ASSISTENTE:")

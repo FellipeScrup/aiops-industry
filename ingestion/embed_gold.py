@@ -1,15 +1,14 @@
-"""Silver → Gold: embedding pipeline.
+"""Silver → Gold: embedding pipeline for PIADE telemetry windows.
 
-Reads logs from PostgreSQL, stratified-samples EMBED_LIMIT rows,
-generates 768-dim embeddings via fastembed (nomic-embed-text-v1.5),
-and indexes them in Milvus. Supports checkpoint-based resumption.
+Reads 1h telemetry windows from PostgreSQL (piade_telemetry), generates
+768-dim embeddings via fastembed (nomic-embed-text-v1.5), and indexes them
+in Milvus. Supports checkpoint-based resumption.
 """
 
 import logging
 import os
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from fastembed import TextEmbedding
@@ -42,19 +41,19 @@ POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
 
 MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
-COLLECTION_NAME: str = "alarm_logs"
+COLLECTION_NAME: str = "piade_telemetry"
 
 EMBED_MODEL_NAME: str = "nomic-ai/nomic-embed-text-v1.5"
 EMBED_DIM: int = 768
 
 EMBED_LIMIT: int = int(os.getenv("EMBED_LIMIT", "50000"))
-EMBED_BATCH: int = 256   # textos por lote de embedding
+EMBED_BATCH: int = 256
 MILVUS_BATCH: int = 500
 LOG_EVERY: int = 1000
 CHECKPOINT_PATH: Path = Path("ingestion/.embed_checkpoint")
 
 
-# ── Fastembed ────────────────────────────────────────────────────────────────
+# ── Fastembed ─────────────────────────────────────────────────────────────────
 
 _embed_model: TextEmbedding | None = None
 
@@ -84,57 +83,33 @@ def _build_engine() -> Engine:
     return create_engine(url)
 
 
-def _load_and_label(engine: Engine) -> pd.DataFrame:
-    logger.info("Carregando logs do PostgreSQL...")
+def _load_telemetry(engine: Engine) -> pd.DataFrame:
+    logger.info("Carregando telemetria do PostgreSQL (piade_telemetry)...")
     query = text("""
-        SELECT source, machine_id, alarm_code, event_type, duration_ms, raw_timestamp
-        FROM logs
+        SELECT
+            equipment_id,
+            interval_start,
+            count_sum,
+            num_changes,
+            pct_idle,
+            pct_production,
+            pct_downtime,
+            pct_perf_loss,
+            pct_sched_downtime
+        FROM piade_telemetry
+        ORDER BY equipment_id, interval_start
     """)
     df = pd.read_sql(query, engine)
-    logger.info("  %d linhas carregadas.", len(df))
-    return _assign_severity(df)
-
-
-def _assign_severity(df: pd.DataFrame) -> pd.DataFrame:
-    freq = df["alarm_code"].value_counts()
-    df = df.copy()
-    df["alarm_frequency"] = df["alarm_code"].map(freq)
-
-    conditions = [
-        (df["source"] == "PIADE") & (df["event_type"] == "downtime"),
-        (df["source"] == "PIADE") & (df["event_type"] == "performance_loss"),
-        (df["source"] == "PIADE") & (df["event_type"] == "scheduled_downtime"),
-        (df["source"] == "PIADE") & (df["event_type"] == "idle"),
-        (df["source"] == "PIADE") & (df["event_type"] == "production"),
-        df["alarm_frequency"] < 500,
-        df["alarm_frequency"] > 10_000,
-    ]
-    choices = ["critical", "warning", "info", "info", "info", "critical", "warning"]
-    df["severity"] = np.select(conditions, choices, default="info")
-    logger.info(
-        "  Distribuição de severidade: %s",
-        df["severity"].value_counts().to_dict(),
-    )
+    logger.info("  %d janelas carregadas.", len(df))
     return df
 
 
-def _stratified_sample(df: pd.DataFrame, total: int) -> pd.DataFrame:
-    dist = df["severity"].value_counts(normalize=True)
-    frames: list[pd.DataFrame] = []
-    for sev, frac in dist.items():
-        n = round(frac * total)
-        group = df[df["severity"] == sev]
-        frames.append(group.sample(min(len(group), n), random_state=42))
-    sampled = (
-        pd.concat(frames)
-        .sample(frac=1, random_state=42)
-        .reset_index(drop=True)
-    )
-    logger.info(
-        "Amostra estratificada: %d logs | %s",
-        len(sampled),
-        sampled["severity"].value_counts().to_dict(),
-    )
+def _sample(df: pd.DataFrame, total: int) -> pd.DataFrame:
+    if len(df) <= total:
+        logger.info("Dataset completo (%d janelas) será indexado.", len(df))
+        return df.reset_index(drop=True)
+    sampled = df.sample(n=total, random_state=42).reset_index(drop=True)
+    logger.info("Amostra aleatória: %d/%d janelas.", len(sampled), len(df))
     return sampled
 
 
@@ -151,16 +126,17 @@ def _ensure_collection() -> Collection:
         return Collection(COLLECTION_NAME)
 
     fields = [
-        FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-        FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=10),
-        FieldSchema(name="machine_id", dtype=DataType.VARCHAR, max_length=20),
-        FieldSchema(name="alarm_code", dtype=DataType.VARCHAR, max_length=20),
-        FieldSchema(name="event_type", dtype=DataType.VARCHAR, max_length=30),
-        FieldSchema(name="severity", dtype=DataType.VARCHAR, max_length=10),
-        FieldSchema(name="log_text", dtype=DataType.VARCHAR, max_length=500),
-        FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=EMBED_DIM),
+        FieldSchema(name="id",             dtype=DataType.INT64,         is_primary=True, auto_id=True),
+        FieldSchema(name="machine_id",     dtype=DataType.VARCHAR,       max_length=20),
+        FieldSchema(name="interval_start", dtype=DataType.VARCHAR,       max_length=30),
+        FieldSchema(name="pct_idle",       dtype=DataType.FLOAT),
+        FieldSchema(name="pct_downtime",   dtype=DataType.FLOAT),
+        FieldSchema(name="pct_perf_loss",  dtype=DataType.FLOAT),
+        FieldSchema(name="count_sum",      dtype=DataType.FLOAT),
+        FieldSchema(name="log_text",       dtype=DataType.VARCHAR,       max_length=500),
+        FieldSchema(name="embedding",      dtype=DataType.FLOAT_VECTOR,  dim=EMBED_DIM),
     ]
-    schema = CollectionSchema(fields=fields, description="AIOps alarm log embeddings")
+    schema = CollectionSchema(fields=fields, description="PIADE 1h telemetry window embeddings")
     col = Collection(name=COLLECTION_NAME, schema=schema)
     logger.info("Collection '%s' criada.", COLLECTION_NAME)
     return col
@@ -168,11 +144,12 @@ def _ensure_collection() -> Collection:
 
 def _flush_batch(collection: Collection, buf: dict[str, list]) -> None:
     data = [
-        buf["source"],
         buf["machine_id"],
-        buf["alarm_code"],
-        buf["event_type"],
-        buf["severity"],
+        buf["interval_start"],
+        buf["pct_idle"],
+        buf["pct_downtime"],
+        buf["pct_perf_loss"],
+        buf["count_sum"],
         buf["log_text"],
         buf["embedding"],
     ]
@@ -204,14 +181,21 @@ def _build_index_and_load(collection: Collection) -> None:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _build_log_text(row: pd.Series) -> str:
-    event = row["event_type"] if pd.notna(row["event_type"]) else "N/A"
+    idle     = float(row["pct_idle"] or 0) * 100
+    down     = float(row["pct_downtime"] or 0) * 100
+    perf     = float(row["pct_perf_loss"] or 0) * 100
+    count    = float(row["count_sum"] or 0)
+    changes  = float(row["num_changes"] or 0)
+    ts       = str(row["interval_start"])[:19]  # truncate to minute precision
     return (
         f"search_document: "
-        f"Alarme {row['alarm_code']} | "
-        f"Máquina {row['machine_id']} | "
-        f"Fonte {row['source']} | "
-        f"Tipo {event} | "
-        f"Severidade {row['severity']}"
+        f"Máquina {row['equipment_id']} | "
+        f"Janela {ts} | "
+        f"Downtime: {down:.1f}% | "
+        f"Idle: {idle:.1f}% | "
+        f"Perda de Performance: {perf:.1f}% | "
+        f"Ocorrências de alarme: {count:.0f} | "
+        f"Mudanças de estado: {changes:.0f}"
     )
 
 
@@ -239,38 +223,38 @@ def _run_pipeline(df: pd.DataFrame, collection: Collection) -> None:
     total = len(df)
 
     logger.info(
-        "Milvus: %d vetores existentes. Checkpoint: %d/%d linhas processadas.",
+        "Milvus: %d vetores existentes. Checkpoint: %d/%d janelas processadas.",
         collection.num_entities,
         offset,
         total,
     )
 
     if offset >= total:
-        logger.info("Nada a processar — todas as %d linhas já foram inseridas.", total)
+        logger.info("Nada a processar — todas as %d janelas já foram inseridas.", total)
         return
 
     remaining = df.iloc[offset:].reset_index(drop=True)
     milvus_buf: dict[str, list] = {
-        "source": [], "machine_id": [], "alarm_code": [],
-        "event_type": [], "severity": [], "log_text": [], "embedding": [],
+        "machine_id": [], "interval_start": [],
+        "pct_idle": [], "pct_downtime": [], "pct_perf_loss": [],
+        "count_sum": [], "log_text": [], "embedding": [],
     }
     total_inserted = offset
 
     for batch_start in range(0, len(remaining), EMBED_BATCH):
-        batch = remaining.iloc[batch_start: batch_start + EMBED_BATCH]
+        batch = remaining.iloc[batch_start : batch_start + EMBED_BATCH]
 
         texts = [_build_log_text(row) for _, row in batch.iterrows()]
         embeddings = _embed_batch(texts)
 
         for i, (_, row) in enumerate(batch.iterrows()):
-            event = str(row["event_type"]) if pd.notna(row["event_type"]) else ""
-            log_text = texts[i]
-            milvus_buf["source"].append(str(row["source"])[:10])
-            milvus_buf["machine_id"].append(str(row["machine_id"])[:20])
-            milvus_buf["alarm_code"].append(str(row["alarm_code"])[:20])
-            milvus_buf["event_type"].append(event[:30])
-            milvus_buf["severity"].append(str(row["severity"])[:10])
-            milvus_buf["log_text"].append(log_text[:500])
+            milvus_buf["machine_id"].append(str(row["equipment_id"])[:20])
+            milvus_buf["interval_start"].append(str(row["interval_start"])[:30])
+            milvus_buf["pct_idle"].append(float(row["pct_idle"] or 0))
+            milvus_buf["pct_downtime"].append(float(row["pct_downtime"] or 0))
+            milvus_buf["pct_perf_loss"].append(float(row["pct_perf_loss"] or 0))
+            milvus_buf["count_sum"].append(float(row["count_sum"] or 0))
+            milvus_buf["log_text"].append(texts[i][:500])
             milvus_buf["embedding"].append(embeddings[i])
 
         abs_pos = offset + batch_start + len(batch)
@@ -310,8 +294,8 @@ def main() -> None:
     collection = _ensure_collection()
 
     engine = _build_engine()
-    df = _load_and_label(engine)
-    sample_df = _stratified_sample(df, EMBED_LIMIT)
+    df = _load_telemetry(engine)
+    sample_df = _sample(df, EMBED_LIMIT)
 
     _run_pipeline(sample_df, collection)
     _build_index_and_load(collection)

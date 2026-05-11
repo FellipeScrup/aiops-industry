@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ── Config ────────────────────────────────────────────────────────────────────
 
 MLFLOW_URI: str = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
-EXPERIMENT_NAME: str = "alarm-severity-classification"
+EXPERIMENT_NAME: str = "piade-degradation-classification"
 RUN_NAME: str = "xgboost-baseline"
 
 XGB_PARAMS: dict = {
@@ -41,16 +41,16 @@ XGB_PARAMS: dict = {
 }
 
 FEATURES: list[str] = [
-    "alarm_code_num",
-    "machine_num",
-    "source_num",
-    "hour_of_day",
-    "day_of_week",
-    "alarm_frequency",
-    "duration_ms",
+    "pct_idle",
+    "pct_production",
+    "pct_downtime",
+    "pct_perf_loss",
+    "pct_sched_downtime",
+    "count_sum",
+    "num_changes",
 ]
 
-PARQUET_PATH = Path("data/silver/processed_logs.parquet")
+PARQUET_PATH = Path("data/silver/processed_telemetry.parquet")
 MODELS_DIR = Path(__file__).parent / "models"
 
 
@@ -72,7 +72,7 @@ def load_data() -> pd.DataFrame:
 def train(df: pd.DataFrame) -> tuple[XGBClassifier, dict, str]:
     logger.info("Dividindo dataset (80/20, stratified)...")
     X = df[FEATURES]
-    y = df["severity_num"]
+    y = df["label_num"]
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
@@ -88,19 +88,19 @@ def train(df: pd.DataFrame) -> tuple[XGBClassifier, dict, str]:
     accuracy = float(accuracy_score(y_test, y_pred))
     f1_weighted = float(f1_score(y_test, y_pred, average="weighted"))
     report_str = classification_report(
-        y_test, y_pred, target_names=["info", "warning", "critical"]
+        y_test, y_pred, target_names=["normal", "degraded", "critical"]
     )
     report_df = pd.DataFrame(
         classification_report(
             y_test,
             y_pred,
-            target_names=["info", "warning", "critical"],
+            target_names=["normal", "degraded", "critical"],
             output_dict=True,
         )
     ).T
 
     metrics: dict = {"accuracy": accuracy, "f1_weighted": f1_weighted}
-    for label in ["info", "warning", "critical"]:
+    for label in ["normal", "degraded", "critical"]:
         for metric in ["precision", "recall", "f1-score"]:
             key = f"{label}_{metric.replace('-', '_')}"
             metrics[key] = float(report_df.loc[label, metric])

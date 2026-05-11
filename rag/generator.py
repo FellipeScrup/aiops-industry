@@ -1,4 +1,4 @@
-"""Sprint 7 — RAG generator: multi-backend LLM support (Ollama + Gemini)."""
+"""RAG generator: multi-backend LLM support (Ollama + Gemini) for telemetry analysis."""
 
 import logging
 import os
@@ -16,47 +16,43 @@ GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 _PROMPT_TEMPLATE = """\
-Você é um assistente especialista em manutenção industrial de máquinas de embalagem.
+Você é um engenheiro de confiabilidade especializado em equipamentos industriais de embalagem.
 
-Com base nos logs históricos similares abaixo, responda à pergunta do técnico.
+Com base nos registros históricos de telemetria (janelas de 1 hora) similares abaixo, \
+analise o estado de funcionamento da máquina e responda à pergunta do técnico.
 
-LOGS SIMILARES ENCONTRADOS:
+REGISTROS DE TELEMETRIA SIMILARES (janelas de 1h):
 {context_str}
 
 PERGUNTA DO TÉCNICO:
 {query}
 
 Responda em português, de forma clara e objetiva. Inclua:
-1. O que este alarme/falha significa
-2. Causa provável
+1. Diagnóstico: o que a telemetria indica sobre o comportamento da máquina
+2. Causa provável da degradação de desempenho (se houver)
 3. Ação corretiva recomendada
 
-Se não houver informação suficiente nos logs, diga isso claramente."""
+Se não houver informação suficiente nos registros, diga isso claramente."""
 
 
 def _format_context(context: list[dict]) -> str:
     lines: list[str] = []
     for rank, hit in enumerate(context, start=1):
-        event = hit.get("event_type") or "N/A"
-        header = (
-            f"- [Rank {rank}, score: {hit['score']:.2f}, severidade: {hit['severity']}]"
-            f" Alarme {hit['alarm_code']} | Máquina {hit['machine_id']}"
-            f" | Fonte {hit['source']} | Tipo {event}"
+        idle  = hit["pct_idle"] * 100
+        down  = hit["pct_downtime"] * 100
+        perf  = hit["pct_perf_loss"] * 100
+        lines.append(
+            f"- [Rank {rank}, similaridade: {hit['score']:.2f}]"
+            f" Máquina {hit['machine_id']} | Janela {hit['interval_start']}"
         )
-        lines.append(header)
-        if hit.get("dict_title"):
-            lines.append(f"   Descrição técnica: {hit['dict_title']}")
-        if hit.get("dict_description"):
-            lines.append(f"   Detalhes: {hit['dict_description']}")
-        if hit.get("dict_probable_causes"):
-            lines.append(f"   Causas prováveis: {hit['dict_probable_causes']}")
-        if hit.get("dict_corrective_actions"):
-            lines.append(f"   Ações corretivas: {hit['dict_corrective_actions']}")
+        lines.append(f"   Downtime: {down:.1f}%")
+        lines.append(f"   Idle: {idle:.1f}%")
+        lines.append(f"   Perda de Performance: {perf:.1f}%")
+        lines.append(f"   Ocorrências de alarme: {hit['count_sum']:.0f}")
     return "\n".join(lines)
 
 
 def _generate_ollama(prompt: str, model: str) -> str:
-    """Call local Ollama API."""
     try:
         resp = requests.post(
             f"{OLLAMA_BASE}/api/generate",
@@ -76,12 +72,10 @@ def _generate_ollama(prompt: str, model: str) -> str:
             ) from exc
         raise
 
-    answer: str = resp.json()["response"]
-    return answer
+    return resp.json()["response"]
 
 
 def _generate_gemini(prompt: str) -> str:
-    """Call Google Generative AI API."""
     if not GEMINI_API_KEY:
         raise ValueError(
             "GEMINI_API_KEY não definida no .env. "
@@ -107,13 +101,9 @@ def _generate_gemini(prompt: str) -> str:
     except Exception as exc:
         error_msg = str(exc)
         if "API_KEY_INVALID" in error_msg or "API key not valid" in error_msg:
-            raise ValueError(
-                f"GEMINI_API_KEY inválida. Verifique sua chave no .env."
-            ) from exc
+            raise ValueError("GEMINI_API_KEY inválida. Verifique sua chave no .env.") from exc
         if "quota" in error_msg.lower() or "RESOURCE_EXHAUSTED" in error_msg:
-            raise RuntimeError(
-                f"Quota do Gemini esgotada. Tente novamente mais tarde."
-            ) from exc
+            raise RuntimeError("Quota do Gemini esgotada. Tente novamente mais tarde.") from exc
         raise RuntimeError(f"Erro na API do Gemini: {error_msg}") from exc
 
 
@@ -122,7 +112,7 @@ def generate(query: str, context: list[dict], model: str = DEFAULT_MODEL) -> str
 
     Args:
         query: Original technician question.
-        context: Retrieved log dicts from retriever.retrieve().
+        context: Retrieved telemetry dicts from retriever.retrieve().
         model: Model identifier — Ollama model name or "gemini".
 
     Returns:

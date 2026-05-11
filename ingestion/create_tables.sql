@@ -1,37 +1,21 @@
 -- Bronze → Silver DDL
--- Tabelas: logs (camada Silver normalizada) e alarm_dictionary (contribuição TCC)
+-- Tabela única: piade_telemetry (janelas de 1h do dataset PIADE sequences)
 
-CREATE TABLE IF NOT EXISTS logs (
-    id            SERIAL PRIMARY KEY,
-    source        VARCHAR(10)  NOT NULL,
-    machine_id    VARCHAR(20)  NOT NULL,
-    alarm_code    VARCHAR(20)  NOT NULL,
-    event_type    VARCHAR(30),
-    duration_ms   BIGINT,
-    raw_timestamp TIMESTAMPTZ  NOT NULL,
-    ingested_at   TIMESTAMPTZ  DEFAULT NOW(),
-    CONSTRAINT uq_logs_dedup UNIQUE (source, machine_id, alarm_code, raw_timestamp)
-);
-
-CREATE INDEX IF NOT EXISTS idx_logs_source      ON logs (source);
-CREATE INDEX IF NOT EXISTS idx_logs_machine_id  ON logs (machine_id);
-CREATE INDEX IF NOT EXISTS idx_logs_alarm_code  ON logs (alarm_code);
-CREATE INDEX IF NOT EXISTS idx_logs_timestamp   ON logs (raw_timestamp);
-
-CREATE TABLE IF NOT EXISTS alarm_dictionary (
+CREATE TABLE IF NOT EXISTS piade_telemetry (
     id                 SERIAL PRIMARY KEY,
-    alarm_code         VARCHAR(20) UNIQUE NOT NULL,
-    source_dataset     VARCHAR(10),
-    category           VARCHAR(50),
-    severity           VARCHAR(20),
-    title              VARCHAR(200),
-    description        TEXT,
-    probable_causes    TEXT[],
-    corrective_actions TEXT[],
-    created_at         TIMESTAMP DEFAULT NOW(),
-    updated_at         TIMESTAMP DEFAULT NOW()
+    equipment_id       VARCHAR(20)   NOT NULL,
+    interval_start     TIMESTAMPTZ   NOT NULL,
+    count_sum          FLOAT,
+    num_changes        FLOAT,
+    pct_idle           FLOAT,
+    pct_production     FLOAT,
+    pct_downtime       FLOAT,
+    pct_perf_loss      FLOAT,
+    pct_sched_downtime FLOAT,
+    ingested_at        TIMESTAMPTZ   DEFAULT NOW(),
+    CONSTRAINT uq_piade_telemetry UNIQUE (equipment_id, interval_start)
 );
 
-CREATE INDEX IF NOT EXISTS idx_alarm_dict_code     ON alarm_dictionary (alarm_code);
-CREATE INDEX IF NOT EXISTS idx_alarm_dict_category ON alarm_dictionary (category);
-CREATE INDEX IF NOT EXISTS idx_alarm_dict_severity ON alarm_dictionary (severity);
+CREATE INDEX IF NOT EXISTS idx_piade_equipment_id    ON piade_telemetry (equipment_id);
+CREATE INDEX IF NOT EXISTS idx_piade_interval_start  ON piade_telemetry (interval_start);
+CREATE INDEX IF NOT EXISTS idx_piade_pct_downtime    ON piade_telemetry (pct_downtime);

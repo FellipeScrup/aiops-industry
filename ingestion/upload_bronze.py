@@ -23,8 +23,7 @@ BUCKET: str = "bronze"
 
 # (local_path, s3_key)
 FILES: list[tuple[Path, str]] = [
-    (Path("data/bronze/alpi/alarms.csv"), "alpi/alarms.csv"),
-    (Path("data/bronze/piade/raw_data.csv"), "piade/raw_data.csv"),
+    (Path("data/bronze/piade/sequences_1h_data.csv"), "piade/sequences_1h_data.csv"),
 ]
 
 

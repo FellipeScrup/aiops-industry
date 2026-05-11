@@ -1,4 +1,4 @@
-"""Sprint 5 — validação do RAG retrieval via busca vetorial no Milvus."""
+"""Validation: vector search in Milvus piade_telemetry collection."""
 
 import logging
 import os
@@ -20,7 +20,7 @@ MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
 OLLAMA_BASE: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_MODEL: str = "nomic-embed-text"
-COLLECTION_NAME: str = "alarm_logs"
+COLLECTION_NAME: str = "piade_telemetry"
 TOP_K: int = 5
 
 
@@ -35,7 +35,7 @@ def _get_query_embedding(query: str) -> list[float]:
 
 
 def search(query: str) -> None:
-    """Embed query and print top-K similar logs from Milvus."""
+    """Embed query and print top-K similar telemetry windows from Milvus."""
     connections.connect(host=MILVUS_HOST, port=MILVUS_PORT)
     collection = Collection(COLLECTION_NAME)
     collection.load()
@@ -48,17 +48,23 @@ def search(query: str) -> None:
         anns_field="embedding",
         param={"metric_type": "COSINE", "params": {"nprobe": 16}},
         limit=TOP_K,
-        output_fields=["alarm_code", "machine_id", "severity", "log_text"],
+        output_fields=[
+            "machine_id", "interval_start",
+            "pct_idle", "pct_downtime", "pct_perf_loss",
+            "count_sum", "log_text",
+        ],
     )
 
     print(f"\nQuery: {query!r}\n")
     for rank, hit in enumerate(results[0], start=1):
-        log_text = hit.entity.get("log_text", "")
-        alarm = hit.entity.get("alarm_code", "?")
-        machine = hit.entity.get("machine_id", "?")
-        severity = hit.entity.get("severity", "?")
-        print(f"Rank {rank} (score: {hit.score:.4f}): {log_text}")
-        print(f"  → Alarme {alarm} | Máquina {machine} | {severity}\n")
+        machine  = hit.entity.get("machine_id", "?")
+        ts       = hit.entity.get("interval_start", "?")
+        downtime = (hit.entity.get("pct_downtime") or 0) * 100
+        idle     = (hit.entity.get("pct_idle") or 0) * 100
+        perf     = (hit.entity.get("pct_perf_loss") or 0) * 100
+        count    = hit.entity.get("count_sum") or 0
+        print(f"Rank {rank} (score: {hit.score:.4f}): Máquina {machine} | Janela {ts}")
+        print(f"  → Downtime {downtime:.1f}% | Idle {idle:.1f}% | Perf. Loss {perf:.1f}% | Alarmes {count:.0f}\n")
 
 
 def main() -> None:

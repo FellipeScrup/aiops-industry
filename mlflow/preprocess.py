@@ -1,13 +1,11 @@
-"""Sprint 4 — Silver → ML: preprocessing pipeline.
+"""Silver → ML: preprocessing pipeline for PIADE telemetry windows.
 
-Reads raw logs from PostgreSQL, applies severity labeling and feature
-engineering, saves a ready-to-train Parquet to data/silver/ and writes
-a human-readable preprocessing report.
+Reads 1h windows from PostgreSQL (piade_telemetry), derives degradation labels
+from telemetry thresholds, and saves a ready-to-train Parquet to data/silver/.
 """
 
 import logging
 import os
-import re
 from pathlib import Path
 
 import numpy as np
@@ -32,30 +30,21 @@ POSTGRES_DB: str = os.getenv("POSTGRES_DB", "aiops_industry")
 POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
 
-OUTPUT_PARQUET = Path("data/silver/processed_logs.parquet")
+OUTPUT_PARQUET = Path("data/silver/processed_telemetry.parquet")
 REPORT_PATH = Path("mlflow/reports/preprocessing_report.txt")
 
-LABEL_MAP: dict[str, int] = {"info": 0, "warning": 1, "critical": 2}
+LABEL_MAP: dict[str, int] = {"normal": 0, "degraded": 1, "critical": 2}
 LABEL_NAMES: dict[int, str] = {v: k for k, v in LABEL_MAP.items()}
 
 FEATURES: list[str] = [
-    "alarm_code_num",
-    "machine_num",
-    "source_num",
-    "hour_of_day",
-    "day_of_week",
-    "alarm_frequency",
-    "duration_ms",
+    "pct_idle",
+    "pct_production",
+    "pct_downtime",
+    "pct_perf_loss",
+    "pct_sched_downtime",
+    "count_sum",
+    "num_changes",
 ]
-
-_NUM_RE = re.compile(r"\d+")
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _extract_num(value: str) -> int:
-    m = _NUM_RE.search(str(value))
-    return int(m.group()) if m else 0
 
 
 def _build_engine() -> Engine:
@@ -69,100 +58,82 @@ def _build_engine() -> Engine:
 # ── Etapa 1 — Carregar dados ──────────────────────────────────────────────────
 
 def load_data(engine: Engine) -> pd.DataFrame:
-    logger.info("Carregando dados do PostgreSQL...")
+    logger.info("Carregando dados de piade_telemetry...")
     query = text("""
         SELECT
-            source,
-            machine_id,
-            alarm_code,
-            event_type,
-            duration_ms,
-            EXTRACT(HOUR FROM raw_timestamp) AS hour_of_day,
-            EXTRACT(DOW  FROM raw_timestamp) AS day_of_week
-        FROM logs
+            equipment_id,
+            interval_start,
+            count_sum,
+            num_changes,
+            pct_idle,
+            pct_production,
+            pct_downtime,
+            pct_perf_loss,
+            pct_sched_downtime
+        FROM piade_telemetry
     """)
     df = pd.read_sql(query, engine)
-    logger.info("  %d linhas carregadas.", len(df))
+    logger.info("  %d janelas carregadas.", len(df))
     return df
 
 
-# ── Etapa 2 — Labels de severidade ───────────────────────────────────────────
+# ── Etapa 2 — Labels de degradação ───────────────────────────────────────────
 
-def assign_severity(df: pd.DataFrame) -> pd.DataFrame:
-    logger.info("Calculando frequência de alarm_code e atribuindo labels...")
+def assign_labels(df: pd.DataFrame) -> pd.DataFrame:
+    """Derive a 3-class degradation label from telemetry thresholds.
 
-    freq = df["alarm_code"].value_counts()
+    critical : downtime > 15% OR perf_loss > 20%
+    degraded : downtime > 5%  OR perf_loss > 10%
+    normal   : otherwise
+    """
+    logger.info("Atribuindo labels de degradação...")
     df = df.copy()
-    df["alarm_frequency"] = df["alarm_code"].map(freq)
 
-    # np.select avalia as condições em ordem — a primeira que bate vence.
+    for col in FEATURES:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
     conditions = [
-        (df["source"] == "PIADE") & (df["event_type"] == "downtime"),
-        (df["source"] == "PIADE") & (df["event_type"] == "performance_loss"),
-        (df["source"] == "PIADE") & (df["event_type"] == "scheduled_downtime"),
-        (df["source"] == "PIADE") & (df["event_type"] == "idle"),
-        (df["source"] == "PIADE") & (df["event_type"] == "production"),
-        df["alarm_frequency"] < 500,
-        df["alarm_frequency"] > 10_000,
+        (df["pct_downtime"] > 0.15) | (df["pct_perf_loss"] > 0.20),
+        (df["pct_downtime"] > 0.05) | (df["pct_perf_loss"] > 0.10),
     ]
-    choices = ["critical", "warning", "info", "info", "info", "critical", "warning"]
+    choices = ["critical", "degraded"]
+    df["label"] = np.select(conditions, choices, default="normal")
+    df["label_num"] = df["label"].map(LABEL_MAP)
 
-    df["severity"] = np.select(conditions, choices, default="info")
-    df["severity_num"] = df["severity"].map(LABEL_MAP)
-
-    dist = df["severity"].value_counts().to_dict()
+    dist = df["label"].value_counts().to_dict()
     logger.info("  Distribuição de labels: %s", dist)
     return df
 
 
-# ── Etapa 3 — Feature engineering ────────────────────────────────────────────
-
-def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    logger.info("Construindo features...")
-    df = df.copy()
-    df["alarm_code_num"] = df["alarm_code"].apply(_extract_num)
-    df["machine_num"] = df["machine_id"].apply(_extract_num)
-    df["source_num"] = df["source"].map({"ALPI": 0, "PIADE": 1}).fillna(0).astype(int)
-    df["duration_ms"] = df["duration_ms"].fillna(0).astype(float)
-    df["hour_of_day"] = df["hour_of_day"].astype(int)
-    df["day_of_week"] = df["day_of_week"].astype(int)
-    logger.info("  Features prontas: %s", FEATURES)
-    return df
-
-
-# ── Etapa 4 — Estatísticas e relatório ───────────────────────────────────────
+# ── Etapa 3 — Relatório ───────────────────────────────────────────────────────
 
 def compute_report(df: pd.DataFrame) -> str:
     total = len(df)
     lines: list[str] = []
 
     lines.append("=" * 60)
-    lines.append("  PREPROCESSING REPORT — AIOps Industry (Sprint 4)")
+    lines.append("  PREPROCESSING REPORT — AIOps Industry (PIADE Telemetry)")
     lines.append("=" * 60)
-    lines.append(f"\nTotal de linhas: {total:,}")
+    lines.append(f"\nTotal de janelas: {total:,}")
 
     lines.append("\n--- Distribuição de Labels ---")
-    label_counts = df["severity_num"].value_counts().sort_index()
+    label_counts = df["label_num"].value_counts().sort_index()
     for num, count in label_counts.items():
         name = LABEL_NAMES.get(int(num), str(num))
         pct = 100.0 * count / total
         lines.append(f"  {name:<10} (label={num}):  {count:>7,}  ({pct:5.1f}%)")
 
     lines.append("\n--- Estatísticas por Feature ---")
-    header = f"  {'Feature':<18} {'min':>10} {'max':>12} {'mean':>12} {'nulls':>8}"
+    header = f"  {'Feature':<22} {'min':>8} {'max':>10} {'mean':>10} {'nulls':>8}"
     lines.append(header)
     lines.append("  " + "-" * (len(header) - 2))
     for feat in FEATURES:
         col = df[feat]
         null_count = int(col.isna().sum())
         lines.append(
-            f"  {feat:<18} {col.min():>10.2f} {col.max():>12.2f}"
-            f" {col.mean():>12.4f} {null_count:>8}"
+            f"  {feat:<22} {col.min():>8.4f} {col.max():>10.4f}"
+            f" {col.mean():>10.4f} {null_count:>8}"
         )
-
-    lines.append("\n--- Fontes ---")
-    for src, cnt in df["source"].value_counts().items():
-        lines.append(f"  {src}: {cnt:,} linhas")
 
     lines.append("")
     return "\n".join(lines)
@@ -174,15 +145,15 @@ def save_report(report: str) -> None:
     logger.info("Relatório salvo em %s", REPORT_PATH)
 
 
-# ── Etapa 5 — Salvar Parquet ──────────────────────────────────────────────────
+# ── Etapa 4 — Salvar Parquet ──────────────────────────────────────────────────
 
 def save_parquet(df: pd.DataFrame) -> None:
     OUTPUT_PARQUET.parent.mkdir(parents=True, exist_ok=True)
-    cols = FEATURES + ["severity", "severity_num"]
+    cols = FEATURES + ["label", "label_num"]
     df[cols].to_parquet(OUTPUT_PARQUET, index=False)
     size_mb = OUTPUT_PARQUET.stat().st_size / 1_048_576
     logger.info(
-        "Dataset salvo em %s (%d linhas, %.1f MB)",
+        "Dataset salvo em %s (%d janelas, %.1f MB)",
         OUTPUT_PARQUET, len(df), size_mb,
     )
 
@@ -193,8 +164,7 @@ def main() -> None:
     try:
         engine = _build_engine()
         df = load_data(engine)
-        df = assign_severity(df)
-        df = engineer_features(df)
+        df = assign_labels(df)
         report = compute_report(df)
         save_report(report)
         save_parquet(df)

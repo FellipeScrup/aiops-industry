@@ -96,6 +96,6 @@ def metadata() -> dict:
         "available_models": ["llama3.2:3b", "qwen2.5:3b", "gemini"],
         "embed_model": "nomic-embed-text",
         "vector_db": "milvus",
-        "total_vectors": 50501,
-        "datasets": ["ALPI", "PIADE"],
+        "collection": "piade_telemetry",
+        "datasets": ["PIADE sequences_1h_data"],
     }

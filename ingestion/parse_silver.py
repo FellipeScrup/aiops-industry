@@ -1,4 +1,4 @@
-"""Bronze → Silver: reads CSVs from MinIO, normalizes, and persists to PostgreSQL."""
+"""Bronze → Silver: reads PIADE sequences_1h_data.csv from MinIO and persists to PostgreSQL."""
 
 import io
 import logging
@@ -37,9 +37,12 @@ POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
 CHUNK_SIZE: int = 50_000
 
 INSERT_SQL = text("""
-    INSERT INTO logs (source, machine_id, alarm_code, event_type, duration_ms, raw_timestamp)
-    VALUES (:source, :machine_id, :alarm_code, :event_type, :duration_ms, :raw_timestamp)
-    ON CONFLICT (source, machine_id, alarm_code, raw_timestamp) DO NOTHING
+    INSERT INTO piade_telemetry
+        (equipment_id, interval_start, count_sum, num_changes,
+         pct_idle, pct_production, pct_downtime, pct_perf_loss, pct_sched_downtime)
+    VALUES (:equipment_id, :interval_start, :count_sum, :num_changes,
+            :pct_idle, :pct_production, :pct_downtime, :pct_perf_loss, :pct_sched_downtime)
+    ON CONFLICT (equipment_id, interval_start) DO NOTHING
 """)
 
 
@@ -68,6 +71,21 @@ def read_csv_from_minio(client: boto3.client, s3_key: str) -> pd.DataFrame:
     return df
 
 
+def transform_piade_sequences(df: pd.DataFrame) -> pd.DataFrame:
+    """Selects and normalizes the key telemetry columns from sequences_1h_data.csv."""
+    return pd.DataFrame({
+        "equipment_id":      df["equipment_ID"].astype(str),
+        "interval_start":    pd.to_datetime(df["interval_start"], utc=True),
+        "count_sum":         pd.to_numeric(df["count_sum"], errors="coerce"),
+        "num_changes":       pd.to_numeric(df["#changes"], errors="coerce"),
+        "pct_idle":          pd.to_numeric(df["%idle"], errors="coerce"),
+        "pct_production":    pd.to_numeric(df["%production"], errors="coerce"),
+        "pct_downtime":      pd.to_numeric(df["%downtime"], errors="coerce"),
+        "pct_perf_loss":     pd.to_numeric(df["%performance_loss"], errors="coerce"),
+        "pct_sched_downtime":pd.to_numeric(df["%scheduled_downtime"], errors="coerce"),
+    })
+
+
 def _clean_records(chunk: pd.DataFrame) -> list[dict[str, Any]]:
     """Convert chunk to list of dicts, replacing NaN/NA/NaT with None for SQL."""
     records = chunk.to_dict(orient="records")
@@ -81,41 +99,14 @@ def _clean_records(chunk: pd.DataFrame) -> list[dict[str, Any]]:
     return records
 
 
-def transform_alpi(df: pd.DataFrame) -> pd.DataFrame:
-    # alarm column is integer (1-154); stored as string for unified alarm_code
-    return pd.DataFrame({
-        "source": "ALPI",
-        "machine_id": df["serial"].astype(str),
-        "alarm_code": df["alarm"].astype(int).astype(str),
-        "event_type": None,
-        "duration_ms": None,
-        "raw_timestamp": pd.to_datetime(df["timestamp"], utc=True),
-    })
-
-
-def transform_piade(df: pd.DataFrame) -> pd.DataFrame:
-    # elapsed stored as-is (unit per source dataset); nullable for non-downtime rows
-    return pd.DataFrame({
-        "source": "PIADE",
-        "machine_id": df["equipment_ID"].astype(str),
-        "alarm_code": df["alarm"].astype(str),
-        "event_type": df["type"].astype(str),
-        "duration_ms": pd.to_numeric(df["elapsed"], errors="coerce").round().astype("Int64"),
-        "raw_timestamp": pd.to_datetime(df["interval_start"], format="ISO8601", utc=True),
-    })
-
-
-def count_by_source(engine: Engine, source: str) -> int:
+def count_telemetry(engine: Engine) -> int:
     with engine.connect() as conn:
-        row = conn.execute(
-            text("SELECT COUNT(*) FROM logs WHERE source = :source"),
-            {"source": source},
-        ).one()
+        row = conn.execute(text("SELECT COUNT(*) FROM piade_telemetry")).one()
         return int(row[0])
 
 
-def ingest_dataframe(engine: Engine, df: pd.DataFrame, label: str) -> int:
-    """Insert df into logs in chunks. Returns total rows attempted."""
+def ingest_dataframe(engine: Engine, df: pd.DataFrame) -> int:
+    """Insert df into piade_telemetry in chunks. Returns total rows attempted."""
     total_rows = len(df)
     n_chunks = (total_rows + CHUNK_SIZE - 1) // CHUNK_SIZE
     total_attempted = 0
@@ -129,8 +120,7 @@ def ingest_dataframe(engine: Engine, df: pd.DataFrame, label: str) -> int:
 
         total_attempted += len(records)
         logger.info(
-            "%s chunk %d/%d: %d linhas tentadas (acumulado: %d)",
-            label,
+            "PIADE chunk %d/%d: %d linhas tentadas (acumulado: %d)",
             i + 1,
             n_chunks,
             len(records),
@@ -141,7 +131,7 @@ def ingest_dataframe(engine: Engine, df: pd.DataFrame, label: str) -> int:
 
 
 def main() -> None:
-    logger.info("Iniciando pipeline Bronze → Silver")
+    logger.info("Iniciando pipeline Bronze → Silver (PIADE sequences_1h_data)")
 
     try:
         minio = get_minio_client()
@@ -150,46 +140,22 @@ def main() -> None:
         logger.error("Falha ao conectar aos serviços: %s", exc)
         raise
 
-    # ── ALPI ────────────────────────────────────────────────────────────────
     try:
-        alpi_raw = read_csv_from_minio(minio, "alpi/alarms.csv")
-        alpi_df = transform_alpi(alpi_raw)
-        alpi_attempted = ingest_dataframe(engine, alpi_df, "ALPI")
-        alpi_in_db = count_by_source(engine, "ALPI")
-        logger.info(
-            "ALPI — tentadas: %d | no banco: %d | duplicatas ignoradas: %d",
-            alpi_attempted,
-            alpi_in_db,
-            alpi_attempted - alpi_in_db,
-        )
-    except Exception as exc:
-        logger.error("Erro ao processar ALPI: %s", exc)
-        raise
-
-    # ── PIADE ───────────────────────────────────────────────────────────────
-    try:
-        piade_raw = read_csv_from_minio(minio, "piade/raw_data.csv")
-        piade_df = transform_piade(piade_raw)
-        piade_attempted = ingest_dataframe(engine, piade_df, "PIADE")
-        piade_in_db = count_by_source(engine, "PIADE")
+        raw = read_csv_from_minio(minio, "piade/sequences_1h_data.csv")
+        df = transform_piade_sequences(raw)
+        attempted = ingest_dataframe(engine, df)
+        in_db = count_telemetry(engine)
         logger.info(
             "PIADE — tentadas: %d | no banco: %d | duplicatas ignoradas: %d",
-            piade_attempted,
-            piade_in_db,
-            piade_attempted - piade_in_db,
+            attempted,
+            in_db,
+            attempted - in_db,
         )
     except Exception as exc:
         logger.error("Erro ao processar PIADE: %s", exc)
         raise
 
-    total_in_db = alpi_in_db + piade_in_db
-    total_attempted = alpi_attempted + piade_attempted
-    logger.info(
-        "Pipeline Silver concluído. Total no banco: %d | Total tentado: %d | Ignorados: %d",
-        total_in_db,
-        total_attempted,
-        total_attempted - total_in_db,
-    )
+    logger.info("Pipeline Silver concluído. Total em piade_telemetry: %d", in_db)
 
 
 if __name__ == "__main__":

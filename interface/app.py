@@ -6,10 +6,10 @@ import gradio as gr
 API_URL = "http://localhost:8001/query"
 
 _EXAMPLES = [
-    ["alarme 139 na máquina 4", 5, "llama3.2:3b"],
-    ["downtime na máquina s_1", 5, "llama3.2:3b"],
-    ["alarme crítico parada de emergência", 5, "llama3.2:3b"],
-    ["falha sensor temperatura", 5, "llama3.2:3b"],
+    ["máquina s_1 com alto downtime", 5, "llama3.2:3b"],
+    ["queda de velocidade na máquina s_3", 5, "llama3.2:3b"],
+    ["máquina parada por muito tempo", 5, "llama3.2:3b"],
+    ["perda de performance acima de 20%", 5, "llama3.2:3b"],
 ]
 
 _MODEL_CHOICES = ["llama3.2:3b", "qwen2.5:3b", "gemini"]
@@ -42,11 +42,13 @@ def analyze(question: str, top_k: int, model: str) -> tuple[str, str, str]:
 
     context_lines: list[str] = []
     for rank, hit in enumerate(data.get("context", []), start=1):
-        event = hit.get("event_type") or "N/A"
+        down = (hit.get("pct_downtime") or 0) * 100
+        idle = (hit.get("pct_idle") or 0) * 100
+        perf = (hit.get("pct_perf_loss") or 0) * 100
         context_lines.append(
             f"Rank {rank} (score: {hit['score']:.4f}): "
-            f"Alarme {hit['alarm_code']} | Máquina {hit['machine_id']} "
-            f"| {hit['source']} | Tipo {event} | {hit['severity']}"
+            f"Máquina {hit.get('machine_id', '?')} | {hit.get('interval_start', '?')} "
+            f"| Downtime {down:.1f}% | Idle {idle:.1f}% | Perf. Loss {perf:.1f}%"
         )
     context_str = "\n".join(context_lines)
 
@@ -58,20 +60,20 @@ def analyze(question: str, top_k: int, model: str) -> tuple[str, str, str]:
     return answer, context_str, scores_str
 
 
-with gr.Blocks(title="AIOps Industry — Diagnóstico de Falhas Industriais") as demo:
-    gr.Markdown("# 🏭 AIOps Industry — Diagnóstico de Falhas Industriais")
+with gr.Blocks(title="AIOps Industry — Análise de Telemetria Industrial") as demo:
+    gr.Markdown("# AIOps Industry — Análise de Telemetria Industrial")
     gr.Markdown("**RAG local powered by Llama 3.2 / Qwen 2.5 / Gemini + Milvus | TCC Facens 2026**")
 
     with gr.Row():
         with gr.Column():
             question_input = gr.Textbox(
-                label="Descreva o alarme ou cole o código:",
-                placeholder="Ex: alarme 139 na máquina 4, ou: downtime na máquina s_1",
+                label="Descreva o comportamento da máquina:",
+                placeholder="Ex: máquina s_1 com alto downtime, ou: queda de velocidade na máquina s_3",
                 lines=3,
             )
             with gr.Row():
                 top_k_slider = gr.Slider(
-                    label="Número de logs similares (top_k)",
+                    label="Número de janelas similares (top_k)",
                     minimum=1,
                     maximum=10,
                     value=5,
@@ -86,7 +88,7 @@ with gr.Blocks(title="AIOps Industry — Diagnóstico de Falhas Industriais") as
 
         with gr.Column():
             answer_output = gr.Textbox(label="Diagnóstico do Assistente", lines=10)
-            context_output = gr.Textbox(label="Logs Similares Recuperados", lines=6)
+            context_output = gr.Textbox(label="Janelas de Telemetria Recuperadas", lines=6)
             scores_output = gr.Textbox(label="Scores / Modelo / Tempo", lines=3)
 
     analyze_btn.click(

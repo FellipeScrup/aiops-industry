@@ -4,11 +4,11 @@ COMPOSE := docker compose -f infra/docker/docker-compose.yml --env-file .env
 
 .PHONY: help up down logs ps restart clean status \
         create-tables ingest-bronze ingest-silver ingest-all \
-        preprocess train \
+        preprocess train-ad eval-rag eval-rag-gen \
+        golden-set validate-golden \
         embed test-retrieval \
         rag-query \
-        api ui serve \
-        seed-dictionary
+        api ui serve
 
 help: ## Exibe esta mensagem de ajuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -44,7 +44,7 @@ status: ## Exibe status dos serviços com portas expostas
 
 # ── Ingestão Medallion ──────────────────────────────────────────────────────
 
-create-tables: ## Cria tabelas logs e alarm_dictionary no PostgreSQL
+create-tables: ## Cria tabela smartfactory_logs no PostgreSQL
 	@set -a && . ./.env && set +a && \
 	docker exec -i aiops-postgres psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" \
 	  < ingestion/create_tables.sql && \
@@ -56,18 +56,28 @@ ingest-bronze: ## Sobe CSVs brutos para o MinIO (Bronze layer)
 ingest-silver: ## Processa Bronze → Silver (normaliza e persiste no PostgreSQL)
 	python ingestion/parse_silver.py
 
-ingest-all: create-tables ingest-bronze ingest-silver ## Pipeline completo: tabelas → Bronze → Silver
-
-seed-dictionary: ## Gera dicionário de alarmes via Ollama (top 50)
-	python ingestion/seed_dictionary.py
+ingest-all: create-tables ingest-bronze ingest-silver ## Pipeline completo: DDL → Bronze (MinIO) → Silver (PostgreSQL)
 
 # ── Modelagem ML ─────────────────────────────────────────────────────────────
 
-preprocess: ## Pré-processa os dados Silver para ML (gera data/silver/processed_logs.parquet)
-	pip install -q -r mlflow/requirements.txt && python mlflow/preprocess.py
+preprocess: ## Pré-processa dados Silver para ML (gera data/silver/processed_smartfactory.parquet)
+	python -m pip install -q -r mlflow/requirements.txt && python mlflow/preprocess.py
 
-train: preprocess ## Treina XGBoost após pré-processamento e registra no MLflow
-	MLFLOW_S3_ENDPOINT_URL=http://localhost:9000 python mlflow/train.py
+train-ad: ## Treina XGBoost AD binário e registra métricas do paper (AP, ROC AUC, fit/predict time)
+	MLFLOW_S3_ENDPOINT_URL=http://localhost:9000 python mlflow/train_ad.py
+
+eval-rag: ## Avalia RAG (baseline vs rag) e loga no MLflow (uso: make eval-rag)
+	python -m pip install -q -r mlflow/requirements.txt && \
+	PYTHONPATH=. python mlflow/evaluate_rag.py
+
+eval-rag-gen: ## Só (re)gera o golden set legado (top-25 anomalias), sem avaliar
+	PYTHONPATH=. python mlflow/evaluate_rag.py --force-gen --skip-eval
+
+golden-set: ## Gera golden set tiered (factual + cross_station + causal) — Passo 0
+	PYTHONPATH=. python mlflow/evaluate_rag.py --tiered --force-gen --skip-eval
+
+validate-golden: ## Valida schema, distribuição e evidências do golden_set.json
+	PYTHONPATH=. python mlflow/validate_golden_set.py
 
 # ── Embeddings Gold ──────────────────────────────────────────────────────────
 
@@ -79,7 +89,7 @@ test-retrieval: ## Testa busca vetorial no Milvus (uso: make test-retrieval QUER
 
 # ── RAG Core ─────────────────────────────────────────────────────────────────
 
-rag-query: ## Consulta o RAG (uso: make rag-query QUERY="alarme 139")
+rag-query: ## Consulta o RAG (uso: make rag-query QUERY="máquina s_1 com alto downtime")
 	PYTHONPATH=. python rag/pipeline.py "$(QUERY)"
 
 # ── API + Interface ───────────────────────────────────────────────────────────

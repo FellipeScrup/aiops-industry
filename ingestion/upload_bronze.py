@@ -1,4 +1,4 @@
-"""Upload raw CSVs from local data/bronze/ into MinIO bucket 'bronze/'."""
+"""Upload Smart Factory log files from local ../14441997/ into MinIO bucket 'smartfactory'."""
 
 import logging
 import os
@@ -19,11 +19,15 @@ logger = logging.getLogger(__name__)
 MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
 MINIO_ROOT_USER: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
 MINIO_ROOT_PASSWORD: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
-BUCKET: str = "bronze"
+BUCKET: str = "smartfactory"
+
+_DATASET_DIR = Path("data/bronze/14441997")
 
 # (local_path, s3_key)
 FILES: list[tuple[Path, str]] = [
-    (Path("data/bronze/piade/sequences_1h_data.csv"), "piade/sequences_1h_data.csv"),
+    (_DATASET_DIR / "training_tenhertz_log_20230411-095748.txt", "logs/training.txt"),
+    (_DATASET_DIR / "test_tenhertz_log_20230411-103455.txt",     "logs/test.txt"),
+    (_DATASET_DIR / "camunda-activity.json",                     "bpmn/camunda-activity.json"),
 ]
 
 

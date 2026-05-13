@@ -1,11 +1,11 @@
-"""Validation: vector search in Milvus piade_telemetry collection."""
+"""Validation: vector search in Milvus smartfactory_logs collection."""
 
 import logging
 import os
 import sys
 
-import requests
 from dotenv import load_dotenv
+from fastembed import TextEmbedding
 from pymilvus import Collection, connections
 
 load_dotenv()
@@ -18,24 +18,29 @@ logger = logging.getLogger(__name__)
 
 MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
-OLLAMA_BASE: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-EMBED_MODEL: str = "nomic-embed-text"
-COLLECTION_NAME: str = "piade_telemetry"
+EMBED_MODEL_NAME: str = "nomic-ai/nomic-embed-text-v1.5"
+COLLECTION_NAME: str = "smartfactory_logs"
 TOP_K: int = 5
+
+_embed_model: TextEmbedding | None = None
+
+
+def _get_embed_model() -> TextEmbedding:
+    global _embed_model
+    if _embed_model is None:
+        _embed_model = TextEmbedding(model_name=EMBED_MODEL_NAME)
+    return _embed_model
 
 
 def _get_query_embedding(query: str) -> list[float]:
-    resp = requests.post(
-        f"{OLLAMA_BASE}/api/embeddings",
-        json={"model": EMBED_MODEL, "prompt": query},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()["embedding"]
+    model = _get_embed_model()
+    prefixed = f"search_query: {query}"
+    embeddings = list(model.embed([prefixed]))
+    return embeddings[0].tolist()
 
 
 def search(query: str) -> None:
-    """Embed query and print top-K similar telemetry windows from Milvus."""
+    """Embed query and print top-K similar log events from Milvus."""
     connections.connect(host=MILVUS_HOST, port=MILVUS_PORT)
     collection = Collection(COLLECTION_NAME)
     collection.load()
@@ -49,29 +54,36 @@ def search(query: str) -> None:
         param={"metric_type": "COSINE", "params": {"nprobe": 16}},
         limit=TOP_K,
         output_fields=[
-            "machine_id", "interval_start",
-            "pct_idle", "pct_downtime", "pct_perf_loss",
-            "count_sum", "log_text",
+            "station", "event_timestamp",
+            "current_state", "current_task", "current_sub_task", "log_text",
         ],
     )
 
     print(f"\nQuery: {query!r}\n")
     for rank, hit in enumerate(results[0], start=1):
-        machine  = hit.entity.get("machine_id", "?")
-        ts       = hit.entity.get("interval_start", "?")
-        downtime = (hit.entity.get("pct_downtime") or 0) * 100
-        idle     = (hit.entity.get("pct_idle") or 0) * 100
-        perf     = (hit.entity.get("pct_perf_loss") or 0) * 100
-        count    = hit.entity.get("count_sum") or 0
-        print(f"Rank {rank} (score: {hit.score:.4f}): Máquina {machine} | Janela {ts}")
-        print(f"  → Downtime {downtime:.1f}% | Idle {idle:.1f}% | Perf. Loss {perf:.1f}% | Alarmes {count:.0f}\n")
+        station = hit.entity.get("station", "?")
+        ts      = hit.entity.get("event_timestamp", "?")
+        state   = hit.entity.get("current_state", "?")
+        task    = hit.entity.get("current_task", "") or "idle"
+        subtask = hit.entity.get("current_sub_task", "") or ""
+        print(f"Rank {rank} (score: {hit.score:.4f}): {station} | {ts} | State: {state}")
+        print(f"  → Task: {task[:80]}")
+        if subtask:
+            print(f"     Sub-task: {subtask[:60]}\n")
+        else:
+            print()
 
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print('Uso: python ingestion/test_retrieval.py "<query>"', file=sys.stderr)
-        sys.exit(1)
-    search(sys.argv[1])
+        for query in [
+            "VGR_1 not ready during calibration",
+            "workpiece transport to oven",
+        ]:
+            search(query)
+            print("-" * 60)
+    else:
+        search(sys.argv[1])
 
 
 if __name__ == "__main__":

@@ -1,21 +1,18 @@
 -- Bronze → Silver DDL
--- Tabela única: piade_telemetry (janelas de 1h do dataset PIADE sequences)
+-- Tabela: smartfactory_logs (eventos NDJSON do dataset Smart Factory Logs 14441997)
 
-CREATE TABLE IF NOT EXISTS piade_telemetry (
-    id                 SERIAL PRIMARY KEY,
-    equipment_id       VARCHAR(20)   NOT NULL,
-    interval_start     TIMESTAMPTZ   NOT NULL,
-    count_sum          FLOAT,
-    num_changes        FLOAT,
-    pct_idle           FLOAT,
-    pct_production     FLOAT,
-    pct_downtime       FLOAT,
-    pct_perf_loss      FLOAT,
-    pct_sched_downtime FLOAT,
-    ingested_at        TIMESTAMPTZ   DEFAULT NOW(),
-    CONSTRAINT uq_piade_telemetry UNIQUE (equipment_id, interval_start)
+CREATE TABLE IF NOT EXISTS smartfactory_logs (
+    id              VARCHAR(36) PRIMARY KEY,
+    station         VARCHAR(20) NOT NULL,
+    event_timestamp TIMESTAMP NOT NULL,
+    current_state   VARCHAR(20) NOT NULL,
+    current_task    TEXT,
+    current_task_duration FLOAT,
+    current_sub_task TEXT,
+    sensors         JSONB,
+    split           VARCHAR(10) NOT NULL  -- 'train' ou 'test'
 );
 
-CREATE INDEX IF NOT EXISTS idx_piade_equipment_id    ON piade_telemetry (equipment_id);
-CREATE INDEX IF NOT EXISTS idx_piade_interval_start  ON piade_telemetry (interval_start);
-CREATE INDEX IF NOT EXISTS idx_piade_pct_downtime    ON piade_telemetry (pct_downtime);
+CREATE INDEX IF NOT EXISTS idx_sf_station ON smartfactory_logs(station);
+CREATE INDEX IF NOT EXISTS idx_sf_state   ON smartfactory_logs(current_state);
+CREATE INDEX IF NOT EXISTS idx_sf_split   ON smartfactory_logs(split);

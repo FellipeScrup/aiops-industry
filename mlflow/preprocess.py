@@ -1,14 +1,17 @@
-"""Silver → ML: preprocessing pipeline for PIADE telemetry windows.
+"""Silver → ML: preprocessing pipeline for Smart Factory log events.
 
-Reads 1h windows from PostgreSQL (piade_telemetry), derives degradation labels
-from telemetry thresholds, and saves a ready-to-train Parquet to data/silver/.
+Reads events from PostgreSQL (smartfactory_logs, split='train'), derives lag
+features (t-1 → t) per station for anomaly detection, and saves a
+ready-to-train Parquet to data/silver/.
+
+Lag design prevents data leakage: all input features come from the previous
+event in the same station, while the label is the *current* state.
 """
 
 import logging
 import os
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
@@ -30,21 +33,26 @@ POSTGRES_DB: str = os.getenv("POSTGRES_DB", "aiops_industry")
 POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
 
-OUTPUT_PARQUET = Path("data/silver/processed_telemetry.parquet")
+OUTPUT_PARQUET = Path("data/silver/processed_smartfactory.parquet")
 REPORT_PATH = Path("mlflow/reports/preprocessing_report.txt")
 
-LABEL_MAP: dict[str, int] = {"normal": 0, "degraded": 1, "critical": 2}
-LABEL_NAMES: dict[int, str] = {v: k for k, v in LABEL_MAP.items()}
+STATION_MAP: dict[str, int] = {
+    "MM_1": 0, "EC_1": 1, "SM_1": 2,
+    "HBW_1": 3, "OV_1": 4, "VGR_1": 5, "WT_1": 6,
+}
 
+# Features usadas no treinamento (todas de t-1, sem leakage)
 FEATURES: list[str] = [
-    "pct_idle",
-    "pct_production",
-    "pct_downtime",
-    "pct_perf_loss",
-    "pct_sched_downtime",
-    "count_sum",
-    "num_changes",
+    "prev_task_duration",
+    "prev_is_moving",
+    "prev_is_calibrating",
+    "prev_has_task",
+    "prev_was_not_ready",
+    "time_delta_s",
+    "station_num",
 ]
+
+LABEL: str = "anomaly"
 
 
 def _build_engine() -> Engine:
@@ -58,51 +66,87 @@ def _build_engine() -> Engine:
 # ── Etapa 1 — Carregar dados ──────────────────────────────────────────────────
 
 def load_data(engine: Engine) -> pd.DataFrame:
-    logger.info("Carregando dados de piade_telemetry...")
+    logger.info("Carregando dados de smartfactory_logs (split='train')...")
     query = text("""
         SELECT
-            equipment_id,
-            interval_start,
-            count_sum,
-            num_changes,
-            pct_idle,
-            pct_production,
-            pct_downtime,
-            pct_perf_loss,
-            pct_sched_downtime
-        FROM piade_telemetry
+            station,
+            event_timestamp,
+            current_state,
+            current_task,
+            current_task_duration,
+            current_sub_task
+        FROM smartfactory_logs
+        WHERE split = 'train'
+        ORDER BY station, event_timestamp
     """)
-    df = pd.read_sql(query, engine)
-    logger.info("  %d janelas carregadas.", len(df))
+    df = pd.read_sql(query, engine, parse_dates=["event_timestamp"])
+    logger.info("  %d eventos carregados.", len(df))
     return df
 
 
-# ── Etapa 2 — Labels de degradação ───────────────────────────────────────────
+# ── Etapa 2 — Feature engineering com lag ────────────────────────────────────
 
-def assign_labels(df: pd.DataFrame) -> pd.DataFrame:
-    """Derive a 3-class degradation label from telemetry thresholds.
+def _compute_instant_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Calcula features no instante t (usadas como lag em t+1)."""
+    task_str = df["current_task"].fillna("")
+    subtask_str = df["current_sub_task"].fillna("")
 
-    critical : downtime > 15% OR perf_loss > 20%
-    degraded : downtime > 5%  OR perf_loss > 10%
-    normal   : otherwise
-    """
-    logger.info("Atribuindo labels de degradação...")
+    df["task_duration"] = pd.to_numeric(df["current_task_duration"], errors="coerce").fillna(0.0)
+    df["is_moving"] = task_str.str.contains("transporting|moving", case=False, regex=True).astype(float)
+    df["is_calibrating"] = subtask_str.str.contains("calibrating", case=False).astype(float)
+    df["has_task"] = (task_str.str.strip() != "").astype(float)
+    df["is_not_ready"] = (df["current_state"] == "not ready").astype(float)
+    return df
+
+
+def build_features(df: pd.DataFrame) -> pd.DataFrame:
+    logger.info("Construindo features com lag-1 por estação...")
     df = df.copy()
+    df = _compute_instant_features(df)
 
-    for col in FEATURES:
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+    df["station_num"] = df["station"].map(STATION_MAP).fillna(-1).astype(int)
 
-    conditions = [
-        (df["pct_downtime"] > 0.15) | (df["pct_perf_loss"] > 0.20),
-        (df["pct_downtime"] > 0.05) | (df["pct_perf_loss"] > 0.10),
-    ]
-    choices = ["critical", "degraded"]
-    df["label"] = np.select(conditions, choices, default="normal")
-    df["label_num"] = df["label"].map(LABEL_MAP)
+    instant_cols = ["task_duration", "is_moving", "is_calibrating", "has_task", "is_not_ready"]
 
-    dist = df["label"].value_counts().to_dict()
-    logger.info("  Distribuição de labels: %s", dist)
-    return df
+    lagged_frames: list[pd.DataFrame] = []
+
+    for station, grp in df.groupby("station", sort=False):
+        grp = grp.sort_values("event_timestamp").copy()
+
+        # Lag-1 das features de estado
+        for col in instant_cols:
+            grp[f"prev_{col.replace('is_not_ready', 'was_not_ready')}"] = grp[col].shift(1)
+
+        # Renomear para manter consistência
+        grp = grp.rename(columns={
+            "prev_task_duration":  "prev_task_duration",
+            "prev_is_moving":      "prev_is_moving",
+            "prev_is_calibrating": "prev_is_calibrating",
+            "prev_has_task":       "prev_has_task",
+        })
+
+        # Diferença temporal em segundos
+        grp["time_delta_s"] = (
+            grp["event_timestamp"].diff().dt.total_seconds().fillna(0.0)
+        )
+
+        # Remover primeira linha de cada estação (sem t-1 disponível)
+        grp = grp.iloc[1:]
+
+        lagged_frames.append(grp)
+
+    df_lag = pd.concat(lagged_frames, ignore_index=True)
+
+    # Label no instante t
+    df_lag[LABEL] = df_lag["is_not_ready"].astype(int)
+
+    dist = df_lag[LABEL].value_counts().sort_index().to_dict()
+    logger.info(
+        "  Distribuição anomaly: normal=%d | anomalous=%d",
+        dist.get(0, 0), dist.get(1, 0),
+    )
+    logger.info("  Dataset final: %d eventos (após drop da primeira linha por estação).", len(df_lag))
+    return df_lag
 
 
 # ── Etapa 3 — Relatório ───────────────────────────────────────────────────────
@@ -112,18 +156,19 @@ def compute_report(df: pd.DataFrame) -> str:
     lines: list[str] = []
 
     lines.append("=" * 60)
-    lines.append("  PREPROCESSING REPORT — AIOps Industry (PIADE Telemetry)")
+    lines.append("  PREPROCESSING REPORT — AIOps Industry (Smart Factory Logs)")
+    lines.append("  Estratégia: Lag-1 features (t-1 → prediz t)")
     lines.append("=" * 60)
-    lines.append(f"\nTotal de janelas: {total:,}")
+    lines.append(f"\nTotal de eventos (train, após lag): {total:,}")
 
     lines.append("\n--- Distribuição de Labels ---")
-    label_counts = df["label_num"].value_counts().sort_index()
+    label_counts = df[LABEL].value_counts().sort_index()
     for num, count in label_counts.items():
-        name = LABEL_NAMES.get(int(num), str(num))
+        name = "ready" if num == 0 else "not ready"
         pct = 100.0 * count / total
-        lines.append(f"  {name:<10} (label={num}):  {count:>7,}  ({pct:5.1f}%)")
+        lines.append(f"  {name:<12} (anomaly={num}):  {count:>7,}  ({pct:5.1f}%)")
 
-    lines.append("\n--- Estatísticas por Feature ---")
+    lines.append("\n--- Estatísticas por Feature (lag) ---")
     header = f"  {'Feature':<22} {'min':>8} {'max':>10} {'mean':>10} {'nulls':>8}"
     lines.append(header)
     lines.append("  " + "-" * (len(header) - 2))
@@ -149,11 +194,11 @@ def save_report(report: str) -> None:
 
 def save_parquet(df: pd.DataFrame) -> None:
     OUTPUT_PARQUET.parent.mkdir(parents=True, exist_ok=True)
-    cols = FEATURES + ["label", "label_num"]
+    cols = FEATURES + [LABEL]
     df[cols].to_parquet(OUTPUT_PARQUET, index=False)
     size_mb = OUTPUT_PARQUET.stat().st_size / 1_048_576
     logger.info(
-        "Dataset salvo em %s (%d janelas, %.1f MB)",
+        "Dataset salvo em %s (%d eventos, %.1f MB)",
         OUTPUT_PARQUET, len(df), size_mb,
     )
 
@@ -164,7 +209,7 @@ def main() -> None:
     try:
         engine = _build_engine()
         df = load_data(engine)
-        df = assign_labels(df)
+        df = build_features(df)
         report = compute_report(df)
         save_report(report)
         save_parquet(df)

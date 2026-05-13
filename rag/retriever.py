@@ -1,4 +1,4 @@
-"""RAG retriever: embed query, search Milvus piade_telemetry collection."""
+"""RAG retriever: embed query, search Milvus smartfactory_logs collection."""
 
 import logging
 import os
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
-COLLECTION_NAME: str = "piade_telemetry"
+COLLECTION_NAME: str = "smartfactory_logs"
 
 EMBED_MODEL_NAME: str = "nomic-ai/nomic-embed-text-v1.5"
 
@@ -48,17 +48,17 @@ def _embed_query(query: str) -> list[float]:
 
 
 def retrieve(query: str, top_k: int = 5) -> list[dict]:
-    """Search Milvus for the top_k telemetry windows most similar to query.
+    """Search Milvus for the top_k log events most similar to query.
 
     Args:
         query: Natural language question from the technician.
         top_k: Number of results to retrieve.
 
     Returns:
-        List of dicts with keys: machine_id, interval_start, pct_idle,
-        pct_downtime, pct_perf_loss, count_sum, log_text, score.
+        List of dicts with keys: station, event_timestamp, current_state,
+        current_task, current_sub_task, log_text, score.
     """
-    logger.info("Recuperando top-%d janelas de telemetria para query: %r", top_k, query)
+    logger.info("Recuperando top-%d eventos de log para query: %r", top_k, query)
 
     try:
         embedding = _embed_query(query)
@@ -78,23 +78,21 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
         param={"metric_type": "COSINE", "params": {"nprobe": 16}},
         limit=top_k,
         output_fields=[
-            "machine_id", "interval_start",
-            "pct_idle", "pct_downtime", "pct_perf_loss",
-            "count_sum", "log_text",
+            "station", "event_timestamp",
+            "current_state", "current_task", "current_sub_task", "log_text",
         ],
     )
 
     hits: list[dict] = []
     for hit in results[0]:
         hits.append({
-            "machine_id":     hit.entity.get("machine_id", ""),
-            "interval_start": hit.entity.get("interval_start", ""),
-            "pct_idle":       float(hit.entity.get("pct_idle") or 0),
-            "pct_downtime":   float(hit.entity.get("pct_downtime") or 0),
-            "pct_perf_loss":  float(hit.entity.get("pct_perf_loss") or 0),
-            "count_sum":      float(hit.entity.get("count_sum") or 0),
-            "log_text":       hit.entity.get("log_text", ""),
-            "score":          float(hit.score),
+            "station":          hit.entity.get("station", ""),
+            "event_timestamp":  hit.entity.get("event_timestamp", ""),
+            "current_state":    hit.entity.get("current_state", ""),
+            "current_task":     hit.entity.get("current_task", ""),
+            "current_sub_task": hit.entity.get("current_sub_task", ""),
+            "log_text":         hit.entity.get("log_text", ""),
+            "score":            float(hit.score),
         })
 
     logger.info("Recuperados %d resultados.", len(hits))

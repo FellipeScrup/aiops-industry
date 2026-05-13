@@ -6,10 +6,10 @@ import gradio as gr
 API_URL = "http://localhost:8001/query"
 
 _EXAMPLES = [
-    ["máquina s_1 com alto downtime", 5, "llama3.2:3b"],
-    ["queda de velocidade na máquina s_3", 5, "llama3.2:3b"],
-    ["máquina parada por muito tempo", 5, "llama3.2:3b"],
-    ["perda de performance acima de 20%", 5, "llama3.2:3b"],
+    ["VGR_1 not ready during workpiece transport", 5, "llama3.2:3b"],
+    ["HBW_1 calibration taking too long", 5, "llama3.2:3b"],
+    ["workpiece transport from oven to milling machine", 5, "llama3.2:3b"],
+    ["station not ready during pickup", 5, "llama3.2:3b"],
 ]
 
 _MODEL_CHOICES = ["llama3.2:3b", "qwen2.5:3b", "gemini"]

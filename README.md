@@ -1,4 +1,4 @@
-# AIOps Industry — RAG para Análise de Telemetria Industrial
+# AIOps Industry — RAG para Análise de Logs de Fábrica Inteligente
 
 > **TCC — Engenharia de Computação — Facens**
 
@@ -9,40 +9,44 @@
 
 ## Sobre
 
-Plataforma de Retrieval-Augmented Generation (RAG) voltada à análise do comportamento de equipamentos industriais de embalagem. O sistema ingere janelas de telemetria de 1 hora do dataset **PIADE** (`sequences_1h_data`), indexa os padrões de operação em um banco vetorial e permite consultas em linguagem natural para auxiliar técnicos e engenheiros de confiabilidade no diagnóstico de degradações de desempenho.
+Plataforma de Retrieval-Augmented Generation (RAG) voltada à análise de logs de eventos de uma fábrica inteligente. O sistema ingere eventos NDJSON em tempo real (10 Hz) do dataset **Smart Factory Logs** (14441997), indexa os padrões de operação em um banco vetorial e permite consultas em linguagem natural para auxiliar técnicos e engenheiros de manutenção no diagnóstico de anomalias.
 
-Em vez de reagir a códigos de alarme isolados, o sistema raciocina sobre o **estado agregado da máquina**: quanto tempo ela ficou parada, quanto perdeu de performance, quantos eventos ocorreram — e por quê isso pode ter acontecido.
+Em vez de reagir a códigos de alarme isolados, o sistema raciocina sobre o **estado operacional de cada estação**: qual tarefa estava sendo executada, por quanto tempo, e por que o estado `not ready` foi atingido.
 
 ---
 
 ## Dataset
 
-**PIADE — sequences_1h_data.csv**
+**Smart Factory Logs — 14441997**
 
-Janelas de 1 hora por equipamento com as seguintes features principais:
+Eventos NDJSON coletados a 10 Hz de 7 estações de uma fábrica inteligente com automação industrial (processos BPMN Camunda):
 
-| Coluna | Descrição |
+| Campo | Descrição |
 |---|---|
-| `equipment_ID` | Identificador da máquina (ex: `s_1`) |
-| `interval_start` | Início da janela temporal |
-| `count_sum` | Total de ocorrências de alarme na janela |
-| `#changes` | Número de mudanças de estado operacional |
-| `%idle` | Proporção de tempo em idle |
-| `%production` | Proporção de tempo em produção |
-| `%downtime` | Proporção de tempo em downtime não planejado |
-| `%performance_loss` | Proporção de tempo com perda de performance |
-| `%scheduled_downtime` | Proporção de tempo em parada planejada |
+| `id` | UUID do evento |
+| `station` | Estação geradora: MM_1, EC_1, SM_1, HBW_1, OV_1, VGR_1, WT_1 |
+| `timestamp` | Timestamp UTC do evento (precisão 100ms) |
+| `current_state` | `"ready"` \| `"not ready"` — label de anomalia |
+| `current_task` | Descrição da tarefa em execução |
+| `current_task_duration` | Duração da tarefa atual em segundos |
+| `current_sub_task` | Sub-tarefa corrente |
+| Campos de sensor | Variáveis por estação (pos_x/y/z, speed, valve, etc.) — armazenados como JSONB |
+
+**Distribuição (split de treino):** 119.845 ready / 20.056 not ready | 22 tarefas distintas | 61 sub-tarefas  
+**Total de eventos:** ~408k (training: 139.901 + test: 268.936)
 
 ---
 
 ## Stack
 
-- **Python** — linguagem principal
+- **Python 3.12** — linguagem principal
 - **Docker Compose** — orquestração local dos serviços
-- **PostgreSQL** — Silver layer: tabela `piade_telemetry` com janelas de 1h
-- **MinIO** — Bronze layer: armazenamento do CSV bruto
-- **Milvus** — Gold layer: banco vetorial com embeddings das janelas de telemetria
-- **MLflow** — rastreamento de experimentos e versionamento do classificador
+- **PostgreSQL** — Silver layer: tabela `smartfactory_logs` com eventos parseados
+- **MinIO** — Bronze layer: armazenamento dos arquivos NDJSON brutos
+- **Milvus** — Gold layer: banco vetorial com embeddings dos eventos (768d, COSINE)
+- **fastembed** — embeddings locais via `nomic-ai/nomic-embed-text-v1.5`
+- **MLflow** — rastreamento de experimentos e versionamento do detector de anomalias
+- **XGBoost** — classificador binário de anomalia (AD)
 - **Ollama** — inferência local de LLMs (Llama 3.2, Qwen 2.5)
 - **Gemini API** — backend LLM alternativo via `GEMINI_API_KEY`
 - **FastAPI** — API REST
@@ -53,28 +57,31 @@ Janelas de 1 hora por equipamento com as seguintes features principais:
 ## Arquitetura Medallion
 
 ```
-MinIO (Bronze)                PostgreSQL (Silver)           Milvus (Gold)
-─────────────────             ───────────────────           ─────────────
-piade/                        piade_telemetry               piade_telemetry
-  sequences_1h_data.csv  ──►    equipment_id           ──►   machine_id
-                                interval_start                interval_start
-                                count_sum                     pct_idle
-                                num_changes                   pct_downtime
-                                pct_idle                      pct_perf_loss
-                                pct_production                count_sum
-                                pct_downtime                  log_text
-                                pct_perf_loss                 embedding (768d)
-                                pct_sched_downtime
+MinIO (Bronze)                    PostgreSQL (Silver)              Milvus (Gold)
+──────────────────                ───────────────────              ─────────────
+smartfactory/                     smartfactory_logs                smartfactory_logs
+  logs/training.txt  ──►            id (PK)               ──►       event_id
+  logs/test.txt                     station                          station
+  bpmn/camunda-      
+        activity.json               event_timestamp                  event_timestamp
+                                    current_state                    current_state
+                                    current_task                     current_task
+                                    current_task_duration            current_sub_task
+                                    current_sub_task                 log_text
+                                    sensors (JSONB)                  embedding (768d)
+                                    split (train/test)
 ```
 
 ### Fluxo de dados
 
 ```
-upload_bronze.py         parse_silver.py          embed_gold.py
-     │                        │                        │
-     ▼                        ▼                        ▼
-CSV → MinIO         MinIO → PostgreSQL        PostgreSQL → Milvus
-(bronze)            (janelas 1h normalizadas)  (nomic-embed-text-v1.5)
+upload_bronze.py          parse_silver.py           embed_gold.py
+     │                         │                         │
+     ▼                         ▼                         ▼
+NDJSON → MinIO       MinIO → PostgreSQL         PostgreSQL → Milvus
+(bronze)             (parse + normaliza)         (nomic-embed-text-v1.5)
+                     batch de 1000 linhas        split='train' apenas
+                     ON CONFLICT DO NOTHING      EMBED_LIMIT=50000
 ```
 
 ### Pipeline RAG
@@ -85,31 +92,33 @@ Técnico
   ▼  POST /query
 FastAPI
   │
-  ▼  embed query (nomic-embed-text-v1.5)
-Milvus  ──► top-k janelas de telemetria similares
+  ▼  embed query (nomic-embed-text-v1.5, prefixo search_query:)
+Milvus  ──► top-k eventos de log similares (COSINE)
   │
-  ▼  prompt template (engenheiro de confiabilidade)
+  ▼  prompt template (engenheiro de fábrica inteligente)
 Ollama / Gemini
   │
   ▼
-Diagnóstico: causa da degradação + ação corretiva
+Diagnóstico: causa do estado not ready + ação corretiva
 ```
 
 ---
 
-## Classificador ML (MLflow)
+## Detector de Anomalia (MLflow)
 
-O XGBoost classifica cada janela de 1h em três níveis de degradação:
+O XGBoost classifica cada evento em binário (ready / not ready):
 
-| Label | Condição |
+| Feature | Descrição |
 |---|---|
-| `normal` | downtime ≤ 5% e perf_loss ≤ 10% |
-| `degraded` | downtime > 5% ou perf_loss > 10% |
-| `critical` | downtime > 15% ou perf_loss > 20% |
+| `task_duration` | Duração da tarefa atual em segundos |
+| `is_moving` | 1 se a tarefa envolve "transporting" ou "moving" |
+| `is_calibrating` | 1 se a sub-tarefa contém "calibrating" |
+| `station_num` | Encoding numérico da estação (MM_1=0 … WT_1=6) |
+| `has_task` | 1 se `current_task` não está vazio |
 
-**Features:** `pct_idle`, `pct_production`, `pct_downtime`, `pct_perf_loss`, `pct_sched_downtime`, `count_sum`, `num_changes`
+**Label:** `anomaly = 1` quando `current_state == "not ready"`
 
-Experimento rastreado em MLflow como `piade-degradation-classification`.
+Experimento rastreado em MLflow como `smartfactory-anomaly-detection`.
 
 ---
 
@@ -118,7 +127,8 @@ Experimento rastreado em MLflow como `piade-degradation-classification`.
 ### Pré-requisitos
 
 - Docker Engine 24+ e Docker Compose v2
-- `make`
+- Python 3.12 e `make`
+- Dataset em `../14441997/` (pasta irmã do projeto)
 - ~4 GB de RAM livre para a stack completa
 
 ### Subindo a stack
@@ -138,21 +148,24 @@ make up
 ### Executando o pipeline completo
 
 ```bash
-# Bronze: envia sequences_1h_data.csv para o MinIO
-make upload-bronze
+# DDL: cria tabela smartfactory_logs no PostgreSQL
+make create-tables
 
-# Silver: normaliza e persiste em piade_telemetry (PostgreSQL)
-make parse-silver
+# Bronze: envia NDJSON brutos para o MinIO (bucket smartfactory)
+make ingest-bronze
 
-# Gold: gera embeddings e indexa no Milvus
-make embed-gold
+# Silver: parseia NDJSON e persiste no PostgreSQL (408k eventos)
+make ingest-silver
 
-# ML: pré-processa e treina o classificador XGBoost
+# Gold: gera embeddings e indexa 50k eventos no Milvus
+make embed
+
+# ML: pré-processa features e treina detector de anomalia XGBoost
 make preprocess
-make train
+make train-ad
 
 # RAG: testa uma query diretamente
-make rag-query QUERY="máquina s_1 com alto downtime"
+make rag-query QUERY="VGR_1 not ready during workpiece transport"
 ```
 
 ### URLs dos serviços
@@ -191,21 +204,20 @@ make clean   # para containers e remove todos os dados
 
 ```
 aiops-industry/
-├── data/
-│   └── bronze/piade/sequences_1h_data.csv   # dataset PIADE
 ├── ingestion/
-│   ├── upload_bronze.py      # Bronze: CSV → MinIO
-│   ├── parse_silver.py       # Silver: MinIO → PostgreSQL (piade_telemetry)
-│   ├── create_tables.sql     # DDL da tabela piade_telemetry
-│   ├── embed_gold.py         # Gold: PostgreSQL → Milvus (embeddings)
+│   ├── create_tables.sql     # DDL da tabela smartfactory_logs
+│   ├── upload_bronze.py      # Bronze: NDJSON → MinIO (bucket smartfactory)
+│   ├── parse_silver.py       # Silver: MinIO → PostgreSQL (smartfactory_logs)
+│   ├── embed_gold.py         # Gold: PostgreSQL → Milvus (nomic embeddings)
 │   └── test_retrieval.py     # validação da busca vetorial
 ├── rag/
 │   ├── retriever.py          # busca vetorial no Milvus
 │   ├── generator.py          # geração de resposta (Ollama / Gemini)
 │   └── pipeline.py           # orquestração retrieve → generate
 ├── mlflow/
-│   ├── preprocess.py         # feature engineering + labels de degradação
-│   └── train.py              # treinamento XGBoost + tracking MLflow
+│   ├── preprocess.py         # feature engineering → processed_smartfactory.parquet
+│   ├── train_ad.py           # XGBoost AD binário + tracking MLflow
+│   └── evaluate_rag.py       # avaliação RAG (baseline vs rag, ROUGE-L, Sem.Sim)
 ├── api/
 │   └── main.py               # FastAPI: POST /query
 ├── interface/
@@ -218,4 +230,4 @@ aiops-industry/
 
 ## Status do Projeto
 
-**Sprint 6 — Pipeline RAG operacional (PIADE sequences_1h_data)**
+**Sprint 8 — Dataset Smart Factory Logs (14441997) — NDJSON, 10Hz, 7 estações, 408k eventos**

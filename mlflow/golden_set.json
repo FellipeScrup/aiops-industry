@@ -1,1 +1,914 @@
-[]
+[
+  {
+    "id": "factual-0001",
+    "tier": "factual",
+    "stations": [
+      "EC_1"
+    ],
+    "event_timestamp": "2023-04-11 10:26:54.040000",
+    "evidence_event_ids": [
+      "102b17c1-303c-40f9-bddf-3fdf912babf8"
+    ],
+    "scenario_context": {
+      "current_state": "ready",
+      "current_task": "",
+      "current_sub_task": "",
+      "current_task_duration": 0.0
+    },
+    "question": "Qual é o estado atual da estação EC_1 no timestamp 2023-04-11 10:26:54.040000?",
+    "reference_answer": "A estação EC_1 está em estado ready no timestamp 2023-04-11 10:26:54.040000.",
+    "station": "EC_1",
+    "current_task": "",
+    "current_sub_task": "",
+    "current_task_duration": 0.0
+  },
+  {
+    "id": "factual-0002",
+    "tier": "factual",
+    "stations": [
+      "EC_1"
+    ],
+    "event_timestamp": "2023-04-11 10:19:37.450000",
+    "evidence_event_ids": [
+      "6e26b475-ed97-443c-a080-c94c244a05e5"
+    ],
+    "scenario_context": {
+      "current_state": "ready",
+      "current_task": "",
+      "current_sub_task": "",
+      "current_task_duration": 0.0
+    },
+    "question": "Qual é o estado atual da estação EC_1 no timestamp 2023-04-11 10:19:37.450000?",
+    "reference_answer": "A estação EC_1 está em estado ready no timestamp 2023-04-11 10:19:37.450000.",
+    "station": "EC_1",
+    "current_task": "",
+    "current_sub_task": "",
+    "current_task_duration": 0.0
+  },
+  {
+    "id": "factual-0003",
+    "tier": "factual",
+    "stations": [
+      "HBW_1"
+    ],
+    "event_timestamp": "2023-04-11 10:22:20.710000",
+    "evidence_event_ids": [
+      "e980ae6c-f7d8-4caa-a410-f9187a01154c"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "unloading a workpiece from slot 2",
+      "current_sub_task": "transporting the bucket to the high bay warehouse crane jib",
+      "current_task_duration": 49.83387
+    },
+    "question": "Qual é o estado atual da estação HBW_1 no timestamp 2023-04-11 10:22:20.710000? ",
+    "reference_answer": "O estado atual da estação HBW_1 no timestamp 2023-04-11 10:22:20.710000 é not ready.",
+    "station": "HBW_1",
+    "current_task": "unloading a workpiece from slot 2",
+    "current_sub_task": "transporting the bucket to the high bay warehouse crane jib",
+    "current_task_duration": 49.83387
+  },
+  {
+    "id": "factual-0004",
+    "tier": "factual",
+    "stations": [
+      "HBW_1"
+    ],
+    "event_timestamp": "2023-04-11 10:30:31.560000",
+    "evidence_event_ids": [
+      "442cdabc-e21f-4a3e-b8f2-9a418f758623"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "unloading a workpiece from slot 4",
+      "current_sub_task": "dropping off the bucket at the conveyor belt",
+      "current_task_duration": 39.538391
+    },
+    "question": "Qual é o estado da estação HBW_1 no timestamp dado?",
+    "reference_answer": "A estação HBW_1 está em estado not ready no timestamp 2023-04-11 10:30:31.560000.",
+    "station": "HBW_1",
+    "current_task": "unloading a workpiece from slot 4",
+    "current_sub_task": "dropping off the bucket at the conveyor belt",
+    "current_task_duration": 39.538391
+  },
+  {
+    "id": "factual-0005",
+    "tier": "factual",
+    "stations": [
+      "MM_1"
+    ],
+    "event_timestamp": "2023-04-11 10:28:23.990000",
+    "evidence_event_ids": [
+      "ef69af4d-31f6-494a-9192-934971a5f39e"
+    ],
+    "scenario_context": {
+      "current_state": "ready",
+      "current_task": "",
+      "current_sub_task": "",
+      "current_task_duration": 0.0
+    },
+    "question": "Qual é o estado atual da estação MM_1 no timestamp 2023-04-11 10:28:23.990000?",
+    "reference_answer": "O estado atual da estação MM_1 no timestamp 2023-04-11 10:28:23.990000 é ready.",
+    "station": "MM_1",
+    "current_task": "",
+    "current_sub_task": "",
+    "current_task_duration": 0.0
+  },
+  {
+    "id": "factual-0006",
+    "tier": "factual",
+    "stations": [
+      "MM_1"
+    ],
+    "event_timestamp": "2023-04-11 10:24:28.600000",
+    "evidence_event_ids": [
+      "eaace5b1-f5d5-484e-b220-0b47d57451a8"
+    ],
+    "scenario_context": {
+      "current_state": "ready",
+      "current_task": "",
+      "current_sub_task": "",
+      "current_task_duration": 0.0
+    },
+    "question": "Qual o estado da estação MM_1 no timestamp 2023-04-11 10:24:28.600000?",
+    "reference_answer": "O estado da estação MM_1 neste instante é ready.",
+    "station": "MM_1",
+    "current_task": "",
+    "current_sub_task": "",
+    "current_task_duration": 0.0
+  },
+  {
+    "id": "factual-0007",
+    "tier": "factual",
+    "stations": [
+      "OV_1"
+    ],
+    "event_timestamp": "2023-04-11 10:31:25.080000",
+    "evidence_event_ids": [
+      "2b621898-6f8e-4230-8c71-38e03bd077c1"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "burning the workpiece for 2 seconds",
+      "current_sub_task": "transporting the workpiece to the inside of the oven",
+      "current_task_duration": 5.718702
+    },
+    "question": "Qual é o estado atual da estação OV_1 no timestamp dado?",
+    "reference_answer": "No timestamp 2023-04-11 10:31:25.080000, a estação OV_1 está em estado not ready.",
+    "station": "OV_1",
+    "current_task": "burning the workpiece for 2 seconds",
+    "current_sub_task": "transporting the workpiece to the inside of the oven",
+    "current_task_duration": 5.718702
+  },
+  {
+    "id": "factual-0008",
+    "tier": "factual",
+    "stations": [
+      "OV_1"
+    ],
+    "event_timestamp": "2023-04-11 10:27:13.650000",
+    "evidence_event_ids": [
+      "c940d37b-8524-416a-bc38-21a475dad13c"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "burning the workpiece for 2 seconds",
+      "current_sub_task": "opening the oven door",
+      "current_task_duration": 17.765051
+    },
+    "question": "Qual é o estado da estação OV_1 no timestamp dado?",
+    "reference_answer": "A estação OV_1 estava não pronta (not ready) no timestamp 2023-04-11 10:27:13.650000.",
+    "station": "OV_1",
+    "current_task": "burning the workpiece for 2 seconds",
+    "current_sub_task": "opening the oven door",
+    "current_task_duration": 17.765051
+  },
+  {
+    "id": "factual-0009",
+    "tier": "factual",
+    "stations": [
+      "SM_1"
+    ],
+    "event_timestamp": "2023-04-11 10:07:53.050000",
+    "evidence_event_ids": [
+      "0ebb1505-2f52-4b1d-a018-ece6972cb49e"
+    ],
+    "scenario_context": {
+      "current_state": "ready",
+      "current_task": "",
+      "current_sub_task": "",
+      "current_task_duration": 0.0
+    },
+    "question": "Qual é o estado atual da estação SM_1 no timestamp 2023-04-11 10:07:53.050000?",
+    "reference_answer": "A estação SM_1 está no estado ready no timestamp 2023-04-11 10:07:53.050000.",
+    "station": "SM_1",
+    "current_task": "",
+    "current_sub_task": "",
+    "current_task_duration": 0.0
+  },
+  {
+    "id": "factual-0010",
+    "tier": "factual",
+    "stations": [
+      "SM_1"
+    ],
+    "event_timestamp": "2023-04-11 10:23:58.350000",
+    "evidence_event_ids": [
+      "305832d0-3b92-4e20-9aef-3bb1295bd5d5"
+    ],
+    "scenario_context": {
+      "current_state": "ready",
+      "current_task": "",
+      "current_sub_task": "",
+      "current_task_duration": 0.0
+    },
+    "question": "Qual é o estado atual da estação SM_1 no timestamp 2023-04-11 10:23:58.350000?",
+    "reference_answer": "A estação SM_1 está em estado ready no timestamp 2023-04-11 10:23:58.350000.",
+    "station": "SM_1",
+    "current_task": "",
+    "current_sub_task": "",
+    "current_task_duration": 0.0
+  },
+  {
+    "id": "factual-0011",
+    "tier": "factual",
+    "stations": [
+      "VGR_1"
+    ],
+    "event_timestamp": "2023-04-11 10:03:35.160000",
+    "evidence_event_ids": [
+      "037daf89-3e57-42d6-9cb5-a8179f729657"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "picking up and transporting the workpiece from the delivery_pick_up_station to the color_detection_delivery_pick_up_station",
+      "current_sub_task": "calibrating motor 2",
+      "current_task_duration": 9.301994
+    },
+    "question": "Qual é o estado atual da estação VGR_1 no timestamp 2023-04-11 10:03:35.160000?",
+    "reference_answer": "No timestamp 2023-04-11 10:03:35.160000, a estação VGR_1 está em estado not ready.",
+    "station": "VGR_1",
+    "current_task": "picking up and transporting the workpiece from the delivery_pick_up_station to the color_detection_delivery_pick_up_station",
+    "current_sub_task": "calibrating motor 2",
+    "current_task_duration": 9.301994
+  },
+  {
+    "id": "factual-0012",
+    "tier": "factual",
+    "stations": [
+      "VGR_1"
+    ],
+    "event_timestamp": "2023-04-11 10:21:44.470000",
+    "evidence_event_ids": [
+      "ba06e0d2-6ada-49f1-b524-23b7eb4739bb"
+    ],
+    "scenario_context": {
+      "current_state": "ready",
+      "current_task": "",
+      "current_sub_task": "",
+      "current_task_duration": 0.0
+    },
+    "question": "Qual é o estado atual da estação VGR_1 no timestamp 2023-04-11 10:21:44.470000?",
+    "reference_answer": "A estação VGR_1 está em estado ready no timestamp 2023-04-11 10:21:44.470000.",
+    "station": "VGR_1",
+    "current_task": "",
+    "current_sub_task": "",
+    "current_task_duration": 0.0
+  },
+  {
+    "id": "factual-0013",
+    "tier": "factual",
+    "stations": [
+      "WT_1"
+    ],
+    "event_timestamp": "2023-04-11 10:16:09.640000",
+    "evidence_event_ids": [
+      "ac561214-a8fb-4d23-901e-97158d5dd87c"
+    ],
+    "scenario_context": {
+      "current_state": "ready",
+      "current_task": "",
+      "current_sub_task": "",
+      "current_task_duration": 0.0
+    },
+    "question": "Qual o estado atual da estação WT_1 no timestamp 2023-04-11 10:16:09.640000?",
+    "reference_answer": "A estação WT_1 está em estado ready no timestamp 2023-04-11 10:16:09.640000.",
+    "station": "WT_1",
+    "current_task": "",
+    "current_sub_task": "",
+    "current_task_duration": 0.0
+  },
+  {
+    "id": "factual-0014",
+    "tier": "factual",
+    "stations": [
+      "WT_1"
+    ],
+    "event_timestamp": "2023-04-11 10:23:33.870000",
+    "evidence_event_ids": [
+      "51a3cddf-75b9-4eb6-bb34-d051f224c131"
+    ],
+    "scenario_context": {
+      "current_state": "ready",
+      "current_task": "",
+      "current_sub_task": "",
+      "current_task_duration": 0.0
+    },
+    "question": "Qual é o estado atual da estação WT_1 no timestamp 2023-04-11 10:23:33.870000?",
+    "reference_answer": "A estação WT_1 está em estado ready neste timestamp.",
+    "station": "WT_1",
+    "current_task": "",
+    "current_sub_task": "",
+    "current_task_duration": 0.0
+  },
+  {
+    "id": "cross_station-0015",
+    "tier": "cross_station",
+    "stations": [
+      "HBW_1",
+      "VGR_1"
+    ],
+    "event_timestamp": "2023-04-11 10:08:34.780000",
+    "evidence_event_ids": [
+      "b6bb738b-b63c-4c03-b707-11526efdc8a3",
+      "e3513714-09a2-4121-b8a3-c7d5be2290bc"
+    ],
+    "scenario_context": {
+      "station_a": "HBW_1",
+      "event_a_ts": "2023-04-11 10:08:34.780000",
+      "event_a_state": "not ready",
+      "event_a_task": "storing a new workpiece in slot 3",
+      "event_a_sub_task": "dropping off the bucket at the slot",
+      "event_a_duration": 106.847861,
+      "station_b": "VGR_1",
+      "event_b_ts": "2023-04-11 10:08:34.780000",
+      "event_b_state": "ready",
+      "event_b_task": "",
+      "event_b_sub_task": ""
+    },
+    "question": "O que estava acontecendo em VGR_1 enquanto HBW_1 não estava pronto e realizava o armazenamento de um novo peças no slot 3, especificamente na tarefa de deixar a caixa no slot?",
+    "reference_answer": "Em VGR_1, durante o mesmo instante (2023-04-11 10:08:34.780000), o estado foi 'ready' e não havia nenhuma tarefa ou sub-tarefa especificada. Podemos hipotetizar que VGR_1 estava em um estágio anterior do processo de armazenamento, talvez já ter transferido a caixa para HBW_1 antes dele começar a tarefa de deixar a caixa no slot 3.",
+    "station": "HBW_1, VGR_1",
+    "current_task": "storing a new workpiece in slot 3",
+    "current_sub_task": "dropping off the bucket at the slot",
+    "current_task_duration": 106.847861
+  },
+  {
+    "id": "cross_station-0016",
+    "tier": "cross_station",
+    "stations": [
+      "SM_1",
+      "WT_1"
+    ],
+    "event_timestamp": "2023-04-11 10:15:49.940000",
+    "evidence_event_ids": [
+      "0d3cdb80-00ac-4ea5-89f7-80dc83606041",
+      "f69a8e28-005a-4f6e-99a2-481830f217b2"
+    ],
+    "scenario_context": {
+      "station_a": "SM_1",
+      "event_a_ts": "2023-04-11 10:15:49.940000",
+      "event_a_state": "not ready",
+      "event_a_task": "sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none",
+      "event_a_sub_task": "ejecting the workpiece to the sink 2",
+      "event_a_duration": 47.836992,
+      "station_b": "WT_1",
+      "event_b_ts": "2023-04-11 10:15:49.970000",
+      "event_b_state": "ready",
+      "event_b_task": "",
+      "event_b_sub_task": ""
+    },
+    "question": "O que estava acontecendo em 'WT_1' enquanto 'SM_1' apresentava um estado de not ready e tentava ejectar a workpiece para o sink 2?",
+    "reference_answer": "No instante exato, 'WT_1' estava no estado 'ready'. 'SM_1', que estava tentando ejectar uma workpiece para o sink 2, estava em um estado de not ready. Essa situação sugere possivelmente que 'WT_1' poderia ter acabado de concluir a tarefa de receber ou preparar a workpiece, liberando-a para a próxima estação 'SM_1'. No entanto, algo interno na 'SM_1' pode ter causado um problema temporário, impedindo que ela finalizasse a sub-tarefa e entrasse em um estado ready. Isso indica uma possível dependência de trabalho ou sincronização entre as duas estações.",
+    "station": "SM_1, WT_1",
+    "current_task": "sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none",
+    "current_sub_task": "ejecting the workpiece to the sink 2",
+    "current_task_duration": 47.836992
+  },
+  {
+    "id": "cross_station-0017",
+    "tier": "cross_station",
+    "stations": [
+      "VGR_1",
+      "EC_1"
+    ],
+    "event_timestamp": "2023-04-11 10:21:02.380000",
+    "evidence_event_ids": [
+      "31a12c28-08be-428e-91c6-d9dbcfadafc7",
+      "dc22ac9f-2881-4987-8f99-bd19bd618265"
+    ],
+    "scenario_context": {
+      "station_a": "VGR_1",
+      "event_a_ts": "2023-04-11 10:21:02.380000",
+      "event_a_state": "not ready",
+      "event_a_task": "picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station",
+      "event_a_sub_task": "calibrating motor 3",
+      "event_a_duration": 38.59724,
+      "station_b": "EC_1",
+      "event_b_ts": "2023-04-11 10:21:02.390000",
+      "event_b_state": "ready",
+      "event_b_task": "",
+      "event_b_sub_task": ""
+    },
+    "question": "O que estava acontecendo em 'EC_1' enquanto 'VGR_1' calibrava o motor 3 para transportar o trabalho de 'sink_3' para 'high_bay_warehouse_delivery_station'?",
+    "reference_answer": "No instante exato, enquanto a VGR_1 estava na tarefa de calibrar o motor 3 (sub-tarefa do processo de picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station), a EC_1 estava no estado 'ready', pronta para iniciar seu próprio ciclo. Uma hipótese de relação causal ou temporal é que a calibração dos motores na VGR_1 pode ter afetado o status de ready da EC_1, possivelmente como uma consequência do ajuste generalizado de sistemas em movimento, garantindo a sincronização entre as estações.",
+    "station": "VGR_1, EC_1",
+    "current_task": "picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station",
+    "current_sub_task": "calibrating motor 3",
+    "current_task_duration": 38.59724
+  },
+  {
+    "id": "cross_station-0018",
+    "tier": "cross_station",
+    "stations": [
+      "OV_1",
+      "EC_1"
+    ],
+    "event_timestamp": "2023-04-11 10:14:50.660000",
+    "evidence_event_ids": [
+      "8e15c21f-cfc2-4fc1-9dfd-b7fffa3ce5f7",
+      "0e277052-b398-4317-8449-71aba8bc4493"
+    ],
+    "scenario_context": {
+      "station_a": "OV_1",
+      "event_a_ts": "2023-04-11 10:14:50.660000",
+      "event_a_state": "not ready",
+      "event_a_task": "picking up and transporting the workpiece from the oven to the milling_machine",
+      "event_a_sub_task": "dropping off the workpiece at the milling_machine",
+      "event_a_duration": 32.402986,
+      "station_b": "EC_1",
+      "event_b_ts": "2023-04-11 10:14:50.660000",
+      "event_b_state": "ready",
+      "event_b_task": "",
+      "event_b_sub_task": ""
+    },
+    "question": "O que estava acontecendo em 'EC_1' enquanto 'OV_1' apresentava um estado 'not ready' e realizava a tarefa de 'picking up and transporting the workpiece from the oven to the milling_machine | Sub-tarefa: dropping off the workpiece at the milling_machine'? ",
+    "reference_answer": "Em 'EC_1', o estado era 'ready' e não havia nenhuma tarefa em execução no instante 2023-04-11 10:14:50.660000, sugerindo que a estação estava pronta para receber o trabalho realizado por 'OV_1'. Uma hipótese de relação causal ou temporal é que 'EC_1' provavelmente estava em um estado 'ready' para recebê-lo assim que 'OV_1' terminou de entregar o trabalhopiece, pois normalmente as estações de trabalhos precisam estar interconectadas e sincronizadas na fabricação inteligente.",
+    "station": "OV_1, EC_1",
+    "current_task": "picking up and transporting the workpiece from the oven to the milling_machine",
+    "current_sub_task": "dropping off the workpiece at the milling_machine",
+    "current_task_duration": 32.402986
+  },
+  {
+    "id": "cross_station-0019",
+    "tier": "cross_station",
+    "stations": [
+      "MM_1",
+      "WT_1"
+    ],
+    "event_timestamp": "2023-04-11 10:15:02.010000",
+    "evidence_event_ids": [
+      "2d8bc3cf-246b-4d94-97b0-ae57f5647ef9",
+      "e77b4d3c-e884-4298-b3ea-6930dd31c3ba"
+    ],
+    "scenario_context": {
+      "station_a": "MM_1",
+      "event_a_ts": "2023-04-11 10:15:02.010000",
+      "event_a_state": "not ready",
+      "event_a_task": "transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards",
+      "event_a_sub_task": "moving towards the initial position",
+      "event_a_duration": 11.256893,
+      "station_b": "WT_1",
+      "event_b_ts": "2023-04-11 10:15:02.020000",
+      "event_b_state": "ready",
+      "event_b_task": "",
+      "event_b_sub_task": ""
+    },
+    "question": "O que estava acontecendo em 'WT_1' enquanto 'MM_1' não estava pronto (not ready) e se movia para a posição inicial (moving towards the initial position)?",
+    "reference_answer": "No momento em que 'MM_1' apresentava o estado de 'not ready' e realizava a sub-tarefa 'moving towards the initial position', 'WT_1' estava pronto ('ready'). Dada essa correlação, uma possível hipótese é que como 'WT_1' já estava pronto, poderia estar aguardando o movimento inicial de 'MM_1' para então realizar sua tarefa. No entanto, sem mais detalhes, a relação causal ou temporal entre as duas estações permanece hipotética.",
+    "station": "MM_1, WT_1",
+    "current_task": "transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards",
+    "current_sub_task": "moving towards the initial position",
+    "current_task_duration": 11.256893
+  },
+  {
+    "id": "cross_station-0020",
+    "tier": "cross_station",
+    "stations": [
+      "HBW_1",
+      "MM_1"
+    ],
+    "event_timestamp": "2023-04-11 10:08:34.650000",
+    "evidence_event_ids": [
+      "205f29f0-db68-40b5-ad20-998d37878c00",
+      "5d90ad87-7e0d-4775-916e-9f9daa1f18c0"
+    ],
+    "scenario_context": {
+      "station_a": "HBW_1",
+      "event_a_ts": "2023-04-11 10:08:34.650000",
+      "event_a_state": "not ready",
+      "event_a_task": "storing a new workpiece in slot 3",
+      "event_a_sub_task": "dropping off the bucket at the slot",
+      "event_a_duration": 106.724651,
+      "station_b": "MM_1",
+      "event_b_ts": "2023-04-11 10:08:34.650000",
+      "event_b_state": "ready",
+      "event_b_task": "",
+      "event_b_sub_task": ""
+    },
+    "question": "O que estava acontecendo em 'MM_1' enquanto 'HBW_1' estava armazenando um novo peço de trabalho no slot 3 e colocando a tábua na posição?",
+    "reference_answer": "Em 'HBW_1', o estado era 'not ready' enquanto realizava a tarefa de armazenar um novo peço de trabalho no slot 3, especificamente colocando a tábua na posição. Simultaneamente, em 'MM_1', o estado era 'ready'. Considerando a configuração das estações cooperando em fluxo, uma possível hipótese é que o estado 'ready' de 'MM_1' pode estar preparado para receber ou processar um novo peço de trabalho após a conclusão da tarefa de armazenamento realizada por 'HBW_1'.",
+    "station": "HBW_1, MM_1",
+    "current_task": "storing a new workpiece in slot 3",
+    "current_sub_task": "dropping off the bucket at the slot",
+    "current_task_duration": 106.724651
+  },
+  {
+    "id": "cross_station-0021",
+    "tier": "cross_station",
+    "stations": [
+      "SM_1",
+      "WT_1"
+    ],
+    "event_timestamp": "2023-04-11 10:15:49.830000",
+    "evidence_event_ids": [
+      "bfe54f58-fcc1-4055-8141-d03cd6d653ef",
+      "d9490755-825d-4c3d-a702-2fcbe4c802b9"
+    ],
+    "scenario_context": {
+      "station_a": "SM_1",
+      "event_a_ts": "2023-04-11 10:15:49.830000",
+      "event_a_state": "not ready",
+      "event_a_task": "sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none",
+      "event_a_sub_task": "ejecting the workpiece to the sink 2",
+      "event_a_duration": 47.730944,
+      "station_b": "WT_1",
+      "event_b_ts": "2023-04-11 10:15:49.860000",
+      "event_b_state": "ready",
+      "event_b_task": "",
+      "event_b_sub_task": ""
+    },
+    "question": "O que estava acontecendo em 'WT_1' enquanto 'SM_1' apresentava o comportamento de não estar pronto (not ready) e realizando a exclusão do workpiece para o sink 2?",
+    "reference_answer": "Enquanto 'SM_1' estava na fase de not ready, realizando a tarefa de ejecting the workpiece to the sink 2, 'WT_1' se encontrava no estado ready. A hipótese é que como o SM_1 não estava pronto (not ready), provavelmente precisava esperar algum sinal ou condição do WT_1 para prosseguir com sua operação. Isso sugere uma possível relação causal onde a condição de 'WT_1' sendo ready pode ter sido um dos pré-requisitos para que o SM_1 pudesse então realizar a exclusão do workpiece.",
+    "station": "SM_1, WT_1",
+    "current_task": "sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none",
+    "current_sub_task": "ejecting the workpiece to the sink 2",
+    "current_task_duration": 47.730944
+  },
+  {
+    "id": "cross_station-0022",
+    "tier": "cross_station",
+    "stations": [
+      "VGR_1",
+      "OV_1"
+    ],
+    "event_timestamp": "2023-04-11 10:21:02.210000",
+    "evidence_event_ids": [
+      "6b3f9b01-99dc-416f-8677-f9273c082875",
+      "6273a7de-1f5d-4dd6-a9d0-61bb25838fab"
+    ],
+    "scenario_context": {
+      "station_a": "VGR_1",
+      "event_a_ts": "2023-04-11 10:21:02.210000",
+      "event_a_state": "not ready",
+      "event_a_task": "picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station",
+      "event_a_sub_task": "calibrating motor 3",
+      "event_a_duration": 38.428209,
+      "station_b": "OV_1",
+      "event_b_ts": "2023-04-11 10:21:02.190000",
+      "event_b_state": "ready",
+      "event_b_task": "",
+      "event_b_sub_task": ""
+    },
+    "question": "O que estava acontecendo em 'OV_1' enquanto 'VGR_1' não estava pronto e calibrando o motor 3 para transportar a peça do sink_3 para o high_bay_warehouse_delivery_station?",
+    "reference_answer": "Ao mesmo tempo que 'VGR_1' apresentava o estado de not ready, realizando a sub-tarefa de calibrando o motor 3 para preparar-se para transportar uma peça do sink_3 ao high_bay_warehouse_delivery_station, a estação 'OV_1' estava em estado ready. Isso sugere que OV_1 pode estar esperando por VGR_1 para realizar alguma tarefa subsequente ou que há um fluxo de trabalho onde OV_1 precisa da informação ou confirmação de VGR_1 antes de continuar com sua operação.",
+    "station": "VGR_1, OV_1",
+    "current_task": "picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station",
+    "current_sub_task": "calibrating motor 3",
+    "current_task_duration": 38.428209
+  },
+  {
+    "id": "cross_station-0023",
+    "tier": "cross_station",
+    "stations": [
+      "OV_1",
+      "SM_1"
+    ],
+    "event_timestamp": "2023-04-11 10:14:50.560000",
+    "evidence_event_ids": [
+      "d1028d64-adbf-4fcb-aa9c-1e630b83b591",
+      "ef92fc87-9a26-4c33-8595-ffd67a56b073"
+    ],
+    "scenario_context": {
+      "station_a": "OV_1",
+      "event_a_ts": "2023-04-11 10:14:50.560000",
+      "event_a_state": "not ready",
+      "event_a_task": "picking up and transporting the workpiece from the oven to the milling_machine",
+      "event_a_sub_task": "dropping off the workpiece at the milling_machine",
+      "event_a_duration": 32.297407,
+      "station_b": "SM_1",
+      "event_b_ts": "2023-04-11 10:14:50.560000",
+      "event_b_state": "ready",
+      "event_b_task": "",
+      "event_b_sub_task": ""
+    },
+    "question": "O que estava acontecendo em 'SM_1' enquanto 'OV_1' não estava pronto para receber o trabalho devido à sub-tarefa de encaminhar o objeto para a máquina de fresagem?",
+    "reference_answer": "Em 'OV_1', o estado era 'not ready' e a tarefa correspondente à sub-tarefa de 'dropping off the workpiece at the milling_machine'. Simultaneamente, em 'SM_1', o estado era 'ready' e estava pronta para receber o trabalho. Acredita-se que a mudança do estado de 'OV_1' para 'not ready' pode ter causado uma perturbação na linha de produção, levando 'SM_1' à espera ou ao preparo para outra operação até que 'OV_1' esteja pronto novamente.",
+    "station": "OV_1, SM_1",
+    "current_task": "picking up and transporting the workpiece from the oven to the milling_machine",
+    "current_sub_task": "dropping off the workpiece at the milling_machine",
+    "current_task_duration": 32.297407
+  },
+  {
+    "id": "cross_station-0024",
+    "tier": "cross_station",
+    "stations": [
+      "MM_1",
+      "WT_1"
+    ],
+    "event_timestamp": "2023-04-11 10:15:01.900000",
+    "evidence_event_ids": [
+      "81d42ffc-2d6c-492f-855f-5ff24c9b083a",
+      "05c99823-6eef-4c06-84a0-3a773a6f39d5"
+    ],
+    "scenario_context": {
+      "station_a": "MM_1",
+      "event_a_ts": "2023-04-11 10:15:01.900000",
+      "event_a_state": "not ready",
+      "event_a_task": "transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards",
+      "event_a_sub_task": "moving towards the initial position",
+      "event_a_duration": 11.151893,
+      "station_b": "WT_1",
+      "event_b_ts": "2023-04-11 10:15:01.920000",
+      "event_b_state": "ready",
+      "event_b_task": "",
+      "event_b_sub_task": ""
+    },
+    "question": "O que estava acontecendo em 'WT_1' enquanto 'MM_1' não estava pronto e se movia para a posição inicial?",
+    "reference_answer": "No instante 2023-04-11 10:15:01.920000, 'WT_1' estava no estado 'ready', pronta para receber o trabalho-pç (workpiece). Simultaneamente, 'MM_1' apresentava um comportamento de não estar pronto ('not ready') e se movendo em direção à posição inicial do trabalho-pç. É possível que a sub-tarefa realizada por 'WT_1' no momento fosse 'ready', já que ela estava pronta para receber o trabalho-pç. A hipótese de relação causal ou temporal sugere que o estado 'ready' de 'WT_1' foi necessário para permitir que 'MM_1' iniciasse sua tarefa, possivelmente garantindo que houvesse um trabalho-pç disponível no momento em que 'MM_1' se movia para a posição inicial.",
+    "station": "MM_1, WT_1",
+    "current_task": "transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards",
+    "current_sub_task": "moving towards the initial position",
+    "current_task_duration": 11.151893
+  },
+  {
+    "id": "causal-0025",
+    "tier": "causal",
+    "stations": [
+      "HBW_1"
+    ],
+    "event_timestamp": "2023-04-11 10:08:34.780000",
+    "evidence_event_ids": [
+      "b6bb738b-b63c-4c03-b707-11526efdc8a3",
+      "205f29f0-db68-40b5-ad20-998d37878c00"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "storing a new workpiece in slot 3",
+      "current_sub_task": "dropping off the bucket at the slot",
+      "current_task_duration": 106.847861,
+      "prev_task": "storing a new workpiece in slot 3",
+      "prev_sub_task": "dropping off the bucket at the slot",
+      "prev_event_ts": "2023-04-11 10:08:34.650000"
+    },
+    "question": "Qual sub-tarefa antecedeu a 'storing a new workpiece in slot 3 | dropping off the bucket at the slot' na estação HBW_1 e por que isso resultou no estado 'not ready'? ",
+    "reference_answer": "A sequência de sub-tarefas anteriores, ambas chamadas 'dropping off the bucket at the slot', indicam que o processo de colocar um novo trabalho na posicão está ocorrendo repetidamente. A duração alta na última sub-tarefa sugere que este evento pode ter levado a uma condição 'not ready'.\n\nA hipótese provável é que houve um erro no processamento do bucket ou na posição da estação HBW_1, levando a essa situação de inatividade.\n\nÉ recomendado verificar o estado do bucket após a sub-tarefa 'dropping off the bucket at the slot' e garantir que esteja em condições adequadas. Além disso, realizar uma verificação da estação HBW_1 para identificar quaisquer problemas mecânicos ou eletrônicos que possam ter levado ao estado 'not ready'.",
+    "station": "HBW_1",
+    "current_task": "storing a new workpiece in slot 3",
+    "current_sub_task": "dropping off the bucket at the slot",
+    "current_task_duration": 106.847861
+  },
+  {
+    "id": "causal-0026",
+    "tier": "causal",
+    "stations": [
+      "SM_1"
+    ],
+    "event_timestamp": "2023-04-11 10:15:49.940000",
+    "evidence_event_ids": [
+      "0d3cdb80-00ac-4ea5-89f7-80dc83606041",
+      "bfe54f58-fcc1-4055-8141-d03cd6d653ef"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none",
+      "current_sub_task": "ejecting the workpiece to the sink 2",
+      "current_task_duration": 47.836992,
+      "prev_task": "sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none",
+      "prev_sub_task": "ejecting the workpiece to the sink 2",
+      "prev_event_ts": "2023-04-11 10:15:49.830000"
+    },
+    "question": "Qual sub-tarefa antecedeu e qual indicação a sequência sub-tarefa anterior → estado atual proporciona sobre o motivo pelo qual a tarefa de 'ejecting the workpiece to the sink 2' levou ao estado 'not ready'? ",
+    "reference_answer": "A sequência de sub-tarefas indica que após tentar ejectar a peça para a tina 2, o sistema não estava pronto para continuar com a operação. Isso sugere um possível problema no processo de ejection ou na configuração do sink 2.\n\nHipótese provável: O sensor de presença na tina 2 pode estar falhando, causando um erro de detecção após o trabalho ser ejectado, ou há um bloqueio mecânico no caminho da peça para a tina 2.\n\nAção corretiva recomendada: Verificar a configuração do sensor de presença na tina 2 e garantir que ele esteja funcionando corretamente. Além disso, realizar uma inspeção física para verificar se há algum bloqueio mecânico no caminho da peça.",
+    "station": "SM_1",
+    "current_task": "sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none",
+    "current_sub_task": "ejecting the workpiece to the sink 2",
+    "current_task_duration": 47.836992
+  },
+  {
+    "id": "causal-0027",
+    "tier": "causal",
+    "stations": [
+      "VGR_1"
+    ],
+    "event_timestamp": "2023-04-11 10:21:02.380000",
+    "evidence_event_ids": [
+      "31a12c28-08be-428e-91c6-d9dbcfadafc7",
+      "6b3f9b01-99dc-416f-8677-f9273c082875"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station",
+      "current_sub_task": "calibrating motor 3",
+      "current_task_duration": 38.59724,
+      "prev_task": "picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station",
+      "prev_sub_task": "calibrating motor 3",
+      "prev_event_ts": "2023-04-11 10:21:02.210000"
+    },
+    "question": "Por que a sub-tarefa 'calibrating motor 3' executada imediatamente antes da tarefa atual na mesma estação resultou em um estado 'not ready' com uma duração alta de 38.597s?",
+    "reference_answer": "A sequência sub-tarefa anterior 'calibrating motor 3' → estado atual 'not ready' indica que o processo de calibração do motor 3 pode ter falhado ou resultado em uma configuração não adequada, levando a problemas na execução subsequente da tarefa.\n\nA hipótese provável é que durante a calibração do motor 3, um ajuste incorreto foi feito, o que pode ter impactado a precisão ou estabilidade do motor ao transportar o workpiece, levando a um estado 'not ready' e uma duração alta de execução.\n\nA ação corretiva recomendada é reavaliar os parâmetros da calibração do motor 3, ajustá-los conforme necessário e realizar testes adicionais para garantir que o motor esteja funcionando corretamente antes de tentar a tarefa novamente.",
+    "station": "VGR_1",
+    "current_task": "picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station",
+    "current_sub_task": "calibrating motor 3",
+    "current_task_duration": 38.59724
+  },
+  {
+    "id": "causal-0028",
+    "tier": "causal",
+    "stations": [
+      "OV_1"
+    ],
+    "event_timestamp": "2023-04-11 10:14:50.660000",
+    "evidence_event_ids": [
+      "8e15c21f-cfc2-4fc1-9dfd-b7fffa3ce5f7",
+      "d1028d64-adbf-4fcb-aa9c-1e630b83b591"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "picking up and transporting the workpiece from the oven to the milling_machine",
+      "current_sub_task": "dropping off the workpiece at the milling_machine",
+      "current_task_duration": 32.402986,
+      "prev_task": "picking up and transporting the workpiece from the oven to the milling_machine",
+      "prev_sub_task": "dropping off the workpiece at the milling_machine",
+      "prev_event_ts": "2023-04-11 10:14:50.560000"
+    },
+    "question": "Qual sub-tarefa antecedeu a 'dropping off the workpiece at the milling_machine' que poderia indicar um problema de alinhamento ou posicionamento inadequado do trabalho no forno antes da sub-tarefa atual?",
+    "reference_answer": "a) A sequência de sub-tarefas indica que o trabalho foi transportado do forno, mas a duração alta na sub-tarefa 'dropping off the workpiece at the milling_machine' sugere um problema potencial durante este processo. b) Hipótese provável é que houve um alinhamento ou posicionamento inadequado do trabalho no forno, resultando em uma demora maior para a sub-tarefa atual. c) Recomenda-se a verificação do alinhamento e posicionamento dos trabalhos no forno antes da sub-tarefa de transporte, além de calibrar qualquer mecanismo envolvido nesse processo.",
+    "station": "OV_1",
+    "current_task": "picking up and transporting the workpiece from the oven to the milling_machine",
+    "current_sub_task": "dropping off the workpiece at the milling_machine",
+    "current_task_duration": 32.402986
+  },
+  {
+    "id": "causal-0029",
+    "tier": "causal",
+    "stations": [
+      "MM_1"
+    ],
+    "event_timestamp": "2023-04-11 10:15:02.010000",
+    "evidence_event_ids": [
+      "2d8bc3cf-246b-4d94-97b0-ae57f5647ef9",
+      "81d42ffc-2d6c-492f-855f-5ff24c9b083a"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards",
+      "current_sub_task": "moving towards the initial position",
+      "current_task_duration": 11.256893,
+      "prev_task": "transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards",
+      "prev_sub_task": "moving towards the initial position",
+      "prev_event_ts": "2023-04-11 10:15:01.900000"
+    },
+    "question": "Qual sub-tarefa antecedeu a movimentação para a posição inicial que levou à situação 'not ready' na estação MM_1?",
+    "reference_answer": "A subsequência de sub-tarefas, onde a movimentação para a posição inicial precedeu um estado 'not ready', sugere que algum problema ocorreu durante ou após essa movimentação.\n\nHipótese provável: O movimento para a posição inicial pode ter causado uma interferência mecânica, como um obstáculo inesperado, ou um sistema de verificação de posicionamento pode ter detectado um deslocamento inadequado.\n\nAção corretiva recomendada: Realizar uma verificação física da área de movimentação para identificar qualquer possível obstrução. Verificar a configuração e o funcionamento do sistema de verificação de posicionamento. Se necessário, ajustar os parâmetros do sistema para melhorar a precisão do posicionamento.",
+    "station": "MM_1",
+    "current_task": "transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards",
+    "current_sub_task": "moving towards the initial position",
+    "current_task_duration": 11.256893
+  },
+  {
+    "id": "causal-0030",
+    "tier": "causal",
+    "stations": [
+      "HBW_1"
+    ],
+    "event_timestamp": "2023-04-11 10:08:34.650000",
+    "evidence_event_ids": [
+      "205f29f0-db68-40b5-ad20-998d37878c00",
+      "4f92b547-4aa6-4f7a-9de0-dde4e74dc243"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "storing a new workpiece in slot 3",
+      "current_sub_task": "dropping off the bucket at the slot",
+      "current_task_duration": 106.724651,
+      "prev_task": "storing a new workpiece in slot 3",
+      "prev_sub_task": "dropping off the bucket at the slot",
+      "prev_event_ts": "2023-04-11 10:08:34.520000"
+    },
+    "question": "Qual sub-tarefa antecedeu 'dropping off the bucket at the slot' que poderia indicar um motivo para o estado 'not ready' na sub-tarefa 'storing a new workpiece in slot 3'? Isso por que a duração alta nesta sub-tarefa pode sugerir uma falha no processo de armazenamento anterior?",
+    "reference_answer": "A subsequência das sub-tarefas 'dropping off the bucket at the slot' seguida pelo estado 'not ready' na mesma sub-tarefa sugere que há um problema imediatamente após o bucket ser colocado no slot. Isso pode indicar que a peça de trabalho não foi corretamente posicionada ou que houve algum deslocamento durante a operação.\n\nA hipótese provável é que a sub-tarefa anterior, 'dropping off the bucket at the slot', tenha colocado o bucket no slot de forma inadequada, resultando em um estado 'not ready' na subsequente sub-tarefa de armazenamento da peça.\n\nA ação corretiva recomendada é revisar e ajustar a sub-tarefa 'dropping off the bucket at the slot', garantindo que o bucket seja posicionado corretamente antes do armazenamento da nova peça. Além disso, realizar um ajuste ou calibração no mecanismo de armazenamento para melhorar a precisão e consistência dos processos.",
+    "station": "HBW_1",
+    "current_task": "storing a new workpiece in slot 3",
+    "current_sub_task": "dropping off the bucket at the slot",
+    "current_task_duration": 106.724651
+  },
+  {
+    "id": "causal-0031",
+    "tier": "causal",
+    "stations": [
+      "SM_1"
+    ],
+    "event_timestamp": "2023-04-11 10:15:49.830000",
+    "evidence_event_ids": [
+      "bfe54f58-fcc1-4055-8141-d03cd6d653ef",
+      "51b8089f-3b5c-4e9f-b599-8168c1c96712"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none",
+      "current_sub_task": "ejecting the workpiece to the sink 2",
+      "current_task_duration": 47.730944,
+      "prev_task": "sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none",
+      "prev_sub_task": "ejecting the workpiece to the sink 2",
+      "prev_event_ts": "2023-04-11 10:15:49.720000"
+    },
+    "question": "Qual sub-tarefa antecedeu que poderia indicar uma causa raiz para o estado 'not ready' da tarefa atual 'sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none | Sub-tarefa: ejecting the workpiece to the sink 2'? ",
+    "reference_answer": "A sub-tarefa anterior 'ejecting the workpiece to the sink 2' foi concluída recentemente, indicando que o problema pode estar relacionado a essa etapa ou aos componentes envolvidos nela.\n\nHipótese provável: um componente do sistema de ejeção (por exemplo, o mecanismo de ejeção) pode ter falhado ou ficado obstruído durante a sub-tarefa anterior, impedindo que o trabalho fosse ejectado corretamente. Esta falha poderia afetar diretamente a capacidade da máquina de realizar a tarefa atual 'not ready'.\n\nAção corretiva recomendada: Realizar uma inspeção visual e mecânica na sub-tarefa anterior 'ejecting the workpiece to the sink 2' para verificar quaisquer componentes que possam ter falhado ou ficado obstruídos. Verificar se a abertura de descarga está livre de obstáculos, se o mecanismo de ejeção está funcionando corretamente e se há algum componente danificado que precise ser substituído.",
+    "station": "SM_1",
+    "current_task": "sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none",
+    "current_sub_task": "ejecting the workpiece to the sink 2",
+    "current_task_duration": 47.730944
+  },
+  {
+    "id": "causal-0032",
+    "tier": "causal",
+    "stations": [
+      "VGR_1"
+    ],
+    "event_timestamp": "2023-04-11 10:21:02.210000",
+    "evidence_event_ids": [
+      "6b3f9b01-99dc-416f-8677-f9273c082875",
+      "ca6f06a0-c9e6-4e3a-b109-1a90fe0ed439"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station",
+      "current_sub_task": "calibrating motor 3",
+      "current_task_duration": 38.428209,
+      "prev_task": "picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station",
+      "prev_sub_task": "calibrating motor 3",
+      "prev_event_ts": "2023-04-11 10:21:02.080000"
+    },
+    "question": "Qual sub-tarefa antecedeu a calibragem do motor 3 que levou à duração alta e ao estado 'not ready' na tarefa de pegar e transportar o trabalho do sink_3 para a high_bay_warehouse_delivery_station?",
+    "reference_answer": "A subsequente sub-tarefa de calibragem do motor 3, seguida pela duração alta (38.428s) na mesma tarefa indica que algum problema pode ter ocorrido durante o processo de calibração ou a sub-tarefa seguinte.\n\nA hipótese de causa provável é que um ajuste inadequado do motor 3 durante a calibragem poderia ter causado uma perda de sincronização, levando a um bloqueio temporário no sistema e aumentando a duração da tarefa.\n\nA ação corretiva recomendada é reavaliar o procedimento de calibração do motor 3 para garantir que os parâmetros estejam corretos. Além disso, realizar uma inspeção visual e mecânica do sistema envolvido para identificar quaisquer possíveis falhas.",
+    "station": "VGR_1",
+    "current_task": "picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station",
+    "current_sub_task": "calibrating motor 3",
+    "current_task_duration": 38.428209
+  },
+  {
+    "id": "causal-0033",
+    "tier": "causal",
+    "stations": [
+      "OV_1"
+    ],
+    "event_timestamp": "2023-04-11 10:14:50.560000",
+    "evidence_event_ids": [
+      "d1028d64-adbf-4fcb-aa9c-1e630b83b591",
+      "44a16942-033b-4c3d-ab87-03aa09cc7ef4"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "picking up and transporting the workpiece from the oven to the milling_machine",
+      "current_sub_task": "dropping off the workpiece at the milling_machine",
+      "current_task_duration": 32.297407,
+      "prev_task": "picking up and transporting the workpiece from the oven to the milling_machine",
+      "prev_sub_task": "dropping off the workpiece at the milling_machine",
+      "prev_event_ts": "2023-04-11 10:14:50.450000"
+    },
+    "question": "Qual sub-tarefa antecedeu a 'dropping off the workpiece at the milling_machine' na mesma estação que indica possíveis problemas de deslocamento do trabalho no processo atual?",
+    "reference_answer": "A sequência de sub-tarefas anterior (transportar o trabalho do forno para a máquina de usinagem e depois entregar o trabalho à máquina de usinagem) sugere que a sub-tarefa anterior poderia ter levado a um estado 'not ready' no processo atual.\n\nHipótese provável: Pode haver uma falha ou lentidão na sub-tarefa anterior, como o transporte do trabalho do forno à máquina de usinagem sendo muito demorado ou interrompido, que afeta negativamente a subsequente entrega ao local correto.\n\nAção corretiva recomendada: Realizar uma verificação detalhada da sub-tarefa anterior 'dropping off the workpiece at the milling_machine', incluindo o exame das operações de transporte e posicionamento do trabalho. Implementar melhorias em caso de lentidão, como otimização dos caminhos de transporte ou ajustes na sincronização entre as máquinas.",
+    "station": "OV_1",
+    "current_task": "picking up and transporting the workpiece from the oven to the milling_machine",
+    "current_sub_task": "dropping off the workpiece at the milling_machine",
+    "current_task_duration": 32.297407
+  },
+  {
+    "id": "causal-0034",
+    "tier": "causal",
+    "stations": [
+      "MM_1"
+    ],
+    "event_timestamp": "2023-04-11 10:15:01.900000",
+    "evidence_event_ids": [
+      "81d42ffc-2d6c-492f-855f-5ff24c9b083a",
+      "1011ce2e-39d5-451c-882a-85ddd21256e9"
+    ],
+    "scenario_context": {
+      "current_state": "not ready",
+      "current_task": "transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards",
+      "current_sub_task": "moving towards the initial position",
+      "current_task_duration": 11.151893,
+      "prev_task": "transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards",
+      "prev_sub_task": "moving towards the initial position",
+      "prev_event_ts": "2023-04-11 10:15:01.780000"
+    },
+    "question": "Por que a sub-tarefa 'moving towards the initial position' demorou 11.152s e resultou no estado atual de 'not ready' na estação MM_1?",
+    "reference_answer": "A longa duração da sub-tarefa anterior e o estado atual 'not ready' indicam que houve um atraso significativo durante o movimento inicial, possivelmente levando ao estado não pronto.\n\nA hipótese provável é de que ocorreu uma obstrução ou falha mecânica durante o movimento inicial do trabalho para a posição inicial, impedindo a conclusão da tarefa e deixando a estação em um estado não pronto.\n\nRecomenda-se verificar a integridade física dos componentes responsáveis pelo movimento inicial (por exemplo, roldanas, motores ou sistemas de controle) e realizar uma manutenção preventiva. Além disso, implementar sensores de detecção de obstrução ou falhas no sistema de movimento pode ajudar a prevenir esse tipo de problema no futuro.",
+    "station": "MM_1",
+    "current_task": "transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards",
+    "current_sub_task": "moving towards the initial position",
+    "current_task_duration": 11.151893
+  }
+]

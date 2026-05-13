@@ -35,7 +35,17 @@ EXPECTED_STATIONS = {"MM_1", "EC_1", "SM_1", "HBW_1", "OV_1", "VGR_1", "WT_1"}
 VALID_TIERS = {"factual", "cross_station", "causal"}
 MIN_PER_TIER = 8
 MIN_QUESTION_CHARS = 30
-MIN_ANSWER_CHARS = 80
+# Thresholds de tamanho da reference_answer por tier:
+# factual = 1-3 frases, OK ser curto.
+# cross_station / causal = devem citar ambas estações ou hipótese + ação corretiva → mais texto.
+MIN_ANSWER_CHARS_BY_TIER = {
+    # factual: pode ser frase única quando contexto é ready+idle
+    # ("O estado de X é ready." ~ 35-45 chars), mas filtra
+    # respostas degeneradas tipo só "ready." ou "X.".
+    "factual":       40,
+    "cross_station": 100,
+    "causal":        120,
+}
 
 REQUIRED_FIELDS = {
     "id", "tier", "stations", "event_timestamp", "evidence_event_ids",
@@ -128,13 +138,15 @@ def check_text_lengths(pairs: list[dict]) -> list[str]:
     for p in pairs:
         q = p.get("question", "")
         a = p.get("reference_answer", "")
+        tier = p.get("tier", "factual")
+        min_answer = MIN_ANSWER_CHARS_BY_TIER.get(tier, 80)
         if len(q) < MIN_QUESTION_CHARS:
             errors.append(
                 f"par {p.get('id', '?')}: question com {len(q)} chars (mínimo {MIN_QUESTION_CHARS})"
             )
-        if len(a) < MIN_ANSWER_CHARS:
+        if len(a) < min_answer:
             errors.append(
-                f"par {p.get('id', '?')}: reference_answer com {len(a)} chars (mínimo {MIN_ANSWER_CHARS})"
+                f"par {p.get('id', '?')} [{tier}]: reference_answer com {len(a)} chars (mínimo {min_answer})"
             )
     return errors
 

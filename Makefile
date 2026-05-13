@@ -68,16 +68,16 @@ train-ad: ## Treina XGBoost AD binário e registra métricas do paper (AP, ROC A
 
 eval-rag: ## Avalia RAG (baseline vs rag) e loga no MLflow (uso: make eval-rag)
 	python -m pip install -q -r mlflow/requirements.txt && \
-	PYTHONPATH=. python mlflow/evaluate_rag.py
+	python mlflow/evaluate_rag.py
 
 eval-rag-gen: ## Só (re)gera o golden set legado (top-25 anomalias), sem avaliar
-	PYTHONPATH=. python mlflow/evaluate_rag.py --force-gen --skip-eval
+	python mlflow/evaluate_rag.py --force-gen --skip-eval
 
 golden-set: ## Gera golden set tiered (factual + cross_station + causal) — Passo 0
-	PYTHONPATH=. python mlflow/evaluate_rag.py --tiered --force-gen --skip-eval
+	python mlflow/evaluate_rag.py --tiered --force-gen --skip-eval
 
 validate-golden: ## Valida schema, distribuição e evidências do golden_set.json
-	PYTHONPATH=. python mlflow/validate_golden_set.py
+	python mlflow/validate_golden_set.py
 
 # ── Embeddings Gold ──────────────────────────────────────────────────────────
 

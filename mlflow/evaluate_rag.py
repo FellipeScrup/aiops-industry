@@ -23,6 +23,15 @@ import os
 import sys
 from pathlib import Path
 
+# Windows console default é cp1252, que não codifica emojis (MLflow imprime "🏃").
+# Força UTF-8 no stdout/stderr para evitar UnicodeEncodeError no end-of-run logging.
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except (AttributeError, OSError):
+        pass
+
 import time
 
 import mlflow
@@ -37,6 +46,13 @@ from rag.generator import call_raw, generate
 from rag.retriever import retrieve
 
 load_dotenv()
+
+# O .env aponta MLFLOW_S3_ENDPOINT_URL para http://minio:9000 (hostname interno
+# da rede Docker). Quando este script roda no host (fora da rede), o DNS falha
+# no upload de artifact. Reescreve para localhost antes do mlflow inicializar.
+_s3_endpoint = os.environ.get("MLFLOW_S3_ENDPOINT_URL", "")
+if "://minio:" in _s3_endpoint:
+    os.environ["MLFLOW_S3_ENDPOINT_URL"] = _s3_endpoint.replace("://minio:", "://localhost:")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -253,7 +269,9 @@ def build_golden_set(scenarios: list[dict], force: bool = False) -> list[dict]:
 def extract_factual_scenarios(per_station: int = TIERED_FACTUAL_PER_STATION) -> list[dict]:
     """Amostra estratificada por estação (pseudo-aleatória determinística via MD5).
 
-    Garante cobertura de todas as 7 estações no tier factual.
+    Garante cobertura de todas as 7 estações no tier factual — inclui
+    estações sem `current_task` (EC_1 telemetria, WT_1) para perguntas
+    do tipo "qual o estado de X às T?".
     """
     logger.info("Extraindo cenários factuais (%d por estação)...", per_station)
     conn = _pg_connect()
@@ -269,7 +287,6 @@ def extract_factual_scenarios(per_station: int = TIERED_FACTUAL_PER_STATION) -> 
                            ) AS rn
                     FROM smartfactory_logs
                     WHERE split = 'train'
-                      AND current_task IS NOT NULL AND current_task != ''
                 )
                 SELECT id, station, event_timestamp, current_state, current_task,
                        current_sub_task, current_task_duration
@@ -311,15 +328,26 @@ def extract_cross_station_scenarios(n: int = TIERED_CROSS_STATION_N) -> list[dic
     try:
         with conn, conn.cursor() as cur:
             cur.execute("""
-                WITH anomalies AS (
+                WITH per_station AS (
                     SELECT id, station, event_timestamp, current_state,
                            current_task, current_sub_task, current_task_duration,
-                           ROW_NUMBER() OVER (ORDER BY current_task_duration DESC) AS rn
+                           ROW_NUMBER() OVER (
+                               PARTITION BY station
+                               ORDER BY current_task_duration DESC
+                           ) AS station_rn
                     FROM smartfactory_logs
                     WHERE split = 'train'
                       AND current_state = 'not ready'
                       AND current_task IS NOT NULL AND current_task != ''
-                    LIMIT 200
+                ),
+                anomalies AS (
+                    SELECT id, station, event_timestamp, current_state,
+                           current_task, current_sub_task, current_task_duration,
+                           ROW_NUMBER() OVER (
+                               ORDER BY station_rn, current_task_duration DESC
+                           ) AS rn
+                    FROM per_station
+                    WHERE station_rn <= 30
                 ),
                 paired AS (
                     SELECT a.id AS id_a, a.station AS station_a, a.event_timestamp AS ts_a,
@@ -396,15 +424,25 @@ def extract_causal_scenarios(n: int = TIERED_CAUSAL_N) -> list[dict]:
                            LAG(event_timestamp)  OVER (PARTITION BY station ORDER BY event_timestamp) AS prev_ts
                     FROM smartfactory_logs
                     WHERE split = 'train'
+                ),
+                anomalies AS (
+                    SELECT id, station, event_timestamp, current_state, current_task,
+                           current_sub_task, current_task_duration,
+                           prev_id, prev_task, prev_sub_task, prev_ts,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY station
+                               ORDER BY current_task_duration DESC
+                           ) AS station_rn
+                    FROM ranked
+                    WHERE current_state = 'not ready'
+                      AND current_task IS NOT NULL AND current_task != ''
+                      AND prev_id IS NOT NULL
                 )
                 SELECT id, station, event_timestamp, current_state, current_task,
                        current_sub_task, current_task_duration,
                        prev_id, prev_task, prev_sub_task, prev_ts
-                FROM ranked
-                WHERE current_state = 'not ready'
-                  AND current_task IS NOT NULL AND current_task != ''
-                  AND prev_id IS NOT NULL
-                ORDER BY current_task_duration DESC
+                FROM anomalies
+                ORDER BY station_rn, current_task_duration DESC
                 LIMIT %s
             """, (n,))
             rows = cur.fetchall()
@@ -560,6 +598,18 @@ def _generate_qa_pair_tiered(scenario: dict, idx: int) -> dict | None:
             tier, scenario["stations"], exc,
         )
         return None
+
+    # qwen2.5 às vezes retorna resposta_ideal como dict {"a":..., "b":..., "c":...}
+    # (interpretou "(a) ... (b) ... (c) ..." do prompt como structured output).
+    # Achata pra string única concatenando os values com \n\n.
+    answer = data.get("resposta_ideal")
+    if isinstance(answer, dict):
+        answer = "\n\n".join(str(v) for v in answer.values())
+    elif isinstance(answer, list):
+        answer = "\n\n".join(str(v) for v in answer)
+    elif not isinstance(answer, str):
+        answer = str(answer) if answer is not None else ""
+    data["resposta_ideal"] = answer
 
     # Campos de compatibilidade com _evaluate_condition / report HTML.
     compat_station = ", ".join(scenario["stations"])

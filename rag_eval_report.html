@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>RAG Evaluation — AIOps Industry</title>
+  <style>
+    body { font-family: sans-serif; margin: 40px; color: #222; }
+    h1   { color: #1a252f; }
+    h2   { color: #2c3e50; border-bottom: 2px solid #ccc; padding-bottom: 6px; margin-top: 40px; }
+    td, th { vertical-align: top; padding: 6px 10px; }
+  </style>
+</head>
+<body>
+  <h1>RAG Evaluation — AIOps Industry</h1>
+  <p>Modelo LLM: <code>qwen2.5:7b</code> &nbsp;|&nbsp;
+     Embedding: <code>nomic-ai/nomic-embed-text-v1.5</code> &nbsp;|&nbsp;
+     Dataset: Smart Factory Logs (10Hz, 7 estações) &nbsp;|&nbsp;
+     Golden set: 34 perguntas</p>
+
+  <h2>1. Comparação entre condições (média)</h2>
+  
+<table border="1" cellpadding="8" cellspacing="0"
+       style="border-collapse:collapse;font-family:monospace;margin-bottom:30px">
+  <thead style="background:#2c3e50;color:#fff">
+    <tr><th>Métrica</th><th>baseline</th><th>rag</th><th>rag_hybrid</th></tr>
+  </thead>
+  <tbody><tr><td><b>ROUGE-L</b></td><td style="">0.1119</td><td style="">0.1095</td><td style="background:#c8f7c5;font-weight:bold">0.1137</td></tr>
+<tr><td><b>Sem. Similarity</b></td><td style="">0.7630</td><td style="background:#c8f7c5;font-weight:bold">0.7868</td><td style="">0.7843</td></tr>
+<tr><td><b>Avg Retrieval Score</b></td><td style="">0.0000</td><td style="background:#c8f7c5;font-weight:bold">0.6891</td><td style="">0.6792</td></tr>
+<tr><td><b>Temporal Δt (s)</b></td><td style="">N/A</td><td style="">388.67s</td><td style="background:#c8f7c5;font-weight:bold">323.48s</td></tr>
+<tr><td><b>Station Match</b></td><td style="">0.0000</td><td style="">0.8824</td><td style="background:#c8f7c5;font-weight:bold">0.9706</td></tr>
+</tbody>
+</table>
+
+  <h2>1b. Breakdown por tier</h2>
+  
+<table border="1" cellpadding="6" cellspacing="0"
+       style="border-collapse:collapse;font-family:monospace;margin-bottom:30px">
+  <thead style="background:#1a5276;color:#fff">
+    <tr><th>Tier</th><th>Métrica</th><th>baseline</th><th>rag</th><th>rag_hybrid</th></tr>
+  </thead>
+  <tbody><tr><th rowspan="5" style="background:#ecf0f1">factual<br/><small>(n=14)</small></th><td>ROUGE-L</td><td style="">0.0704</td><td style="">0.0674</td><td style="background:#c8f7c5;font-weight:bold">0.0705</td></tr>
+<tr><td>Sem. Similarity</td><td style="">0.7449</td><td style="background:#c8f7c5;font-weight:bold">0.7558</td><td style="">0.7554</td></tr>
+<tr><td>Avg Retrieval Score</td><td style="">0.0000</td><td style="background:#c8f7c5;font-weight:bold">0.6786</td><td style="">0.6649</td></tr>
+<tr><td>Temporal Δt (s)</td><td style="">N/A</td><td style="">357.63s</td><td style="background:#c8f7c5;font-weight:bold">186.55s</td></tr>
+<tr><td>Station Match</td><td style="">0.0000</td><td style="background:#c8f7c5;font-weight:bold">1.0000</td><td style="background:#c8f7c5;font-weight:bold">1.0000</td></tr>
+<tr><th rowspan="5" style="background:#ecf0f1">cross_station<br/><small>(n=10)</small></th><td>ROUGE-L</td><td style="">0.1266</td><td style="">0.1135</td><td style="background:#c8f7c5;font-weight:bold">0.1274</td></tr>
+<tr><td>Sem. Similarity</td><td style="">0.7486</td><td style="">0.7940</td><td style="background:#c8f7c5;font-weight:bold">0.7959</td></tr>
+<tr><td>Avg Retrieval Score</td><td style="">0.0000</td><td style="background:#c8f7c5;font-weight:bold">0.6691</td><td style="">0.6548</td></tr>
+<tr><td>Temporal Δt (s)</td><td style="">N/A</td><td style="background:#c8f7c5;font-weight:bold">367.56s</td><td style="">385.42s</td></tr>
+<tr><td>Station Match</td><td style="">0.0000</td><td style="">0.7000</td><td style="background:#c8f7c5;font-weight:bold">1.0000</td></tr>
+<tr><th rowspan="5" style="background:#ecf0f1">causal<br/><small>(n=10)</small></th><td>ROUGE-L</td><td style="">0.1554</td><td style="background:#c8f7c5;font-weight:bold">0.1643</td><td style="">0.1605</td></tr>
+<tr><td>Sem. Similarity</td><td style="">0.8027</td><td style="background:#c8f7c5;font-weight:bold">0.8230</td><td style="">0.8132</td></tr>
+<tr><td>Avg Retrieval Score</td><td style="">0.0000</td><td style="background:#c8f7c5;font-weight:bold">0.7238</td><td style="background:#c8f7c5;font-weight:bold">0.7238</td></tr>
+<tr><td>Temporal Δt (s)</td><td style="">N/A</td><td style="background:#c8f7c5;font-weight:bold">453.26s</td><td style="background:#c8f7c5;font-weight:bold">453.26s</td></tr>
+<tr><td>Station Match</td><td style="">0.0000</td><td style="background:#c8f7c5;font-weight:bold">0.9000</td><td style="background:#c8f7c5;font-weight:bold">0.9000</td></tr>
+</tbody>
+</table>
+
+  <h2>2. Delta vs baseline (ganho do RAG)</h2>
+  
+<table border="1" cellpadding="8" cellspacing="0"
+       style="border-collapse:collapse;font-family:monospace">
+  <thead style="background:#1a5276;color:#fff">
+    <tr><th>Métrica</th><th>Condição</th><th>Delta vs baseline</th></tr>
+  </thead>
+  <tbody><tr><td>ROUGE-L</td><td>rag</td><td style="color:red">-0.0024 (-2.1%)</td></tr>
+<tr><td>ROUGE-L</td><td>rag_hybrid</td><td style="color:green">+0.0018 (+1.6%)</td></tr>
+<tr><td>Sem. Similarity</td><td>rag</td><td style="color:green">+0.0238 (+3.1%)</td></tr>
+<tr><td>Sem. Similarity</td><td>rag_hybrid</td><td style="color:green">+0.0213 (+2.8%)</td></tr>
+</tbody>
+</table>
+
+  <h2>3. Detalhe por pergunta — condição <em>rag_hybrid</em></h2>
+  
+<p>Detalhe abaixo refere-se à condição <code>rag_hybrid</code>.</p>
+<table border="1" cellpadding="6" cellspacing="0"
+       style="border-collapse:collapse;font-family:monospace;width:100%">
+  <thead style="background:#34495e;color:#fff">
+    <tr><th>Tier</th><th>Estação</th><th>Pergunta</th><th>Resposta (trecho)</th>
+        <th>ROUGE-L</th><th>Sem.Sim</th><th>Temporal Δt</th><th>Station Match</th></tr>
+  </thead>
+  <tbody>
+<tr>
+  <td>factual</td>
+  <td>EC_1<br/><small style="color:#888"></small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado atual da estação EC_1 no timestamp 2023-04-11 10:26:54.040000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico: Os registros mostrados indicam que a estação EC_1 estava em estado "ready" e tarefa "idle" há aproximadamente 1 minuto antes do timestamp questionado (2023-04-11 10:26:55.090000), mas não fornecem informações específicas sobre o estado exato no momento em que a pergunta foi feita, ou se…</td>
+  <td>0.070</td>
+  <td>0.793</td>
+  <td>1.26s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>EC_1<br/><small style="color:#888"></small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado atual da estação EC_1 no timestamp 2023-04-11 10:19:37.450000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">1. Diagnóstico: Os logs indicam que a estação EC_1 estava em estado "ready" e tarefa "idle" por volta dos timestamps 2023-04-11 10:19:40, com uma similaridade de 0.67 entre os registros.
+
+2. Causa provável do problema ou comportamento observado: Não há informações suficientes nos logs fornecidos par…</td>
+  <td>0.063</td>
+  <td>0.731</td>
+  <td>2.84s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>HBW_1<br/><small style="color:#888">unloading a workpiece from slot 2</small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado atual da estação HBW_1 no timestamp 2023-04-11 10:22:20.710000? </td>
+  <td style="max-width:300px;font-size:12px;color:#555">### Diagnóstico:
+Os logs fornecidos indicam que a estação HBW_1 estava em um estado "not ready" (não pronto) e realizando uma tarefa de deslocamento de um trabalhado (workpiece) da posição 2 na esteira. As sub-tarefas envolviam a recuperação de um balde da esteira de transporte.
+
+### Causa provável …</td>
+  <td>0.056</td>
+  <td>0.774</td>
+  <td>3.98s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>HBW_1<br/><small style="color:#888">unloading a workpiece from slot 4</small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado da estação HBW_1 no timestamp 2023-04-11 10:30:31.560000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">### Diagnóstico:
+Os logs fornecidos indicam que a estação HBW_1 está no estado "not ready" e realizando tarefas relacionadas à descarga de peças em uma determinada faixa do sistema. Os registros são consistentes, todos sugerindo que a estação está ocupada desempenhando o mesmo conjunto de tarefas.
+
+…</td>
+  <td>0.054</td>
+  <td>0.756</td>
+  <td>1.46s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>MM_1<br/><small style="color:#888"></small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado atual da estação MM_1 no timestamp 2023-04-11 10:28:23.990000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico: Os logs fornecidos indicam que a estação MM_1 estava em um estado "ready" e uma tarefa "idle" até o timestamp 2023-04-11 10:28:20.490000. No timestamp 2023-04-11 10:28:23.990000, não há registro específico de atividade para a estação MM_1 nos logs fornecidos.
+
+Causa provável do problema…</td>
+  <td>0.064</td>
+  <td>0.724</td>
+  <td>3.71s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>MM_1<br/><small style="color:#888"></small></td>
+  <td style="max-width:280px;font-size:13px">Qual o estado da estação MM_1 no timestamp 2023-04-11 10:24:28.600000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos indicam que a estação MM_1 estava no estado "ready" e tarefa "idle" durante um intervalo de tempo de cerca de 20 segundos antes do timestamp em questão (2023-04-11 10:24:30.520000). No entanto, não há registro exatamente para o timestamp solicitado (2023-04-11 10:24:2…</td>
+  <td>0.049</td>
+  <td>0.711</td>
+  <td>1.70s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>OV_1<br/><small style="color:#888">burning the workpiece for 2 seconds</small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado atual da estação OV_1 no timestamp 2023-04-11 10:31:25.080000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">1. Diagnóstico: Os logs indicam que a estação OV_1 estava no estado "ready" e tarefa "idle" em múltiplos timestamp's anteriores ao questionado. Isso sugere um comportamento consistente, mas não fornece informações sobre o estado atual da estação.
+
+2. Causa provável do problema ou comportamento obser…</td>
+  <td>0.104</td>
+  <td>0.725</td>
+  <td>444.87s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>OV_1<br/><small style="color:#888">burning the workpiece for 2 seconds</small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado da estação OV_1 no timestamp 2023-04-11 10:27:13.650000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico: Os logs indicados sugerem que a estação OV_1 estava em estado "ready" e tarefa "idle" entre 2023-04-11 10:11:00.050000 e 10:11:00.480000, o que significa que a estação estava pronta para receber uma tarefa, mas sem nenhuma ação em andamento.
+
+Causa provável do problema ou comportamento …</td>
+  <td>0.083</td>
+  <td>0.730</td>
+  <td>973.39s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>SM_1<br/><small style="color:#888"></small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado atual da estação SM_1 no timestamp 2023-04-11 10:07:53.050000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos mostram que a estação SM_1 esteve em um estado "ready" e uma tarefa "idle" entre os timestamps 2023-04-11 10:07:55.620000 e 2023-04-11 10:07:55.940000, com uma frequência de registro em torno de 0.11 segundos. No timestamp específico solicitado (2023-04-11 10:07:53.05…</td>
+  <td>0.056</td>
+  <td>0.761</td>
+  <td>2.59s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>SM_1<br/><small style="color:#888"></small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado atual da estação SM_1 no timestamp 2023-04-11 10:23:58.350000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos indicam que a estação SM_1 estava em estado "ready" e tarefa "idle" durante os instantes temporais entre 2023-04-11 10:23:55.050000 e 2023-04-11 10:24:00.350000, com uma frequência próxima. No entanto, não há registro para o timestamp especificado pelo técnico (2023-0…</td>
+  <td>0.087</td>
+  <td>0.758</td>
+  <td>2.13s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>VGR_1<br/><small style="color:#888">picking up and transporting the workpiec</small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado atual da estação VGR_1 no timestamp 2023-04-11 10:03:35.160000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos indicam que a estação VGR_1 estava no estado "ready" e tarefa "idle" em intervalos de tempo próximos, com um registro mais recente sendo o de 2023-04-11 10:23:00. Não há registros específicos para o timestamp 2023-04-11 10:03:35.160000.
+
+Causa provável do problema ou …</td>
+  <td>0.087</td>
+  <td>0.766</td>
+  <td>1165.05s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>VGR_1<br/><small style="color:#888"></small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado atual da estação VGR_1 no timestamp 2023-04-11 10:21:44.470000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">1. Diagnóstico: Os logs indicam que a estação VGR_1 estava no estado "ready" e tarefa "idle" em várias ocasiões próximas entre 2023-04-11 10:21:45.100000 e 2023-04-11 10:21:45.520000. No entanto, não há nenhum registro para o timestamp exato de 2023-04-11 10:21:44.470000.
+
+2. Causa provável do probl…</td>
+  <td>0.081</td>
+  <td>0.775</td>
+  <td>0.84s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>WT_1<br/><small style="color:#888"></small></td>
+  <td style="max-width:280px;font-size:13px">Qual o estado atual da estação WT_1 no timestamp 2023-04-11 10:16:09.640000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos indicam que a estação WT_1 estava no estado "ready" e tarefa "idle" entre os timestamps 2023-04-11 10:16:05.200000 e 2023-04-11 10:16:05.630000, com uma pequena margem de diferença entre os timestamps. No entanto, esses logs não cobrem o intervalo até o timestamp 2023…</td>
+  <td>0.078</td>
+  <td>0.771</td>
+  <td>4.23s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>factual</td>
+  <td>WT_1<br/><small style="color:#888"></small></td>
+  <td style="max-width:280px;font-size:13px">Qual é o estado atual da estação WT_1 no timestamp 2023-04-11 10:23:33.870000?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os registros de log mostram que a estação WT_1 estava em estado "ready" e tarefa "idle" entre os timestamps 2023-04-11 10:23:30.020000 e 2023-04-11 10:23:30.450000, que separam apenas cerca de 0,4 segundos. No timestamp exato solicitado (2023-04-11 10:23:33.870000) não há registro dispo…</td>
+  <td>0.053</td>
+  <td>0.799</td>
+  <td>3.63s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>cross_station</td>
+  <td>HBW_1, VGR_1<br/><small style="color:#888">storing a new workpiece in slot 3</small></td>
+  <td style="max-width:280px;font-size:13px">O que estava acontecendo em VGR_1 enquanto HBW_1 não estava pronto e realizava o armazenamento de um novo peças no slot 3, especificamente na tarefa de deixar a caixa no slot?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">### Diagnóstico: O que os logs indicam sobre o comportamento do sistema
+Os registros mostram que:
+
+1. **HBW_1** estava em estado "not ready" (não pronto) e realizando a tarefa de armazenar um novo peças no slot 3, com sub-tarefa de se mover para o slot 3.
+2. **VGR_1**, por outro lado, também estava …</td>
+  <td>0.085</td>
+  <td>0.808</td>
+  <td>418.27s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>cross_station</td>
+  <td>SM_1, WT_1<br/><small style="color:#888">sorting the workpiece which is located a</small></td>
+  <td style="max-width:280px;font-size:13px">O que estava acontecendo em 'WT_1' enquanto 'SM_1' apresentava um estado de not ready e tentava ejectar a workpiece para o sink 2?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs indicam que a estação SM_1 estava em um estado de "not ready" e tentou ejectar a peça para o sink 2, mas também tentou ejectar a mesma peça para o sink 1 no registro subsequente. Isso sugere que houve uma duplicidade na tarefa de ejeção da peça.
+
+Causa provável do problema ou co…</td>
+  <td>0.152</td>
+  <td>0.785</td>
+  <td>170.18s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>cross_station</td>
+  <td>VGR_1, EC_1<br/><small style="color:#888">picking up and transporting the workpiec</small></td>
+  <td style="max-width:280px;font-size:13px">O que estava acontecendo em 'EC_1' enquanto 'VGR_1' calibrava o motor 3 para transportar o trabalho de 'sink_3' para 'high_bay_warehouse_delivery_station'?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos indicam que a estação VGR_1 estava em um estado "not ready" e realizava o sub-tarefa de calibrar o motor 3 para transportar um trabalho do sink_3 para o high_bay_warehouse_delivery_station. Os registros são idênticos, sugestivos de um comportamento persistente ou reco…</td>
+  <td>0.156</td>
+  <td>0.859</td>
+  <td>6.49s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>cross_station</td>
+  <td>OV_1, EC_1<br/><small style="color:#888">picking up and transporting the workpiec</small></td>
+  <td style="max-width:280px;font-size:13px">O que estava acontecendo em 'EC_1' enquanto 'OV_1' apresentava um estado 'not ready' e realizava a tarefa de 'picking up and transporting the workpiece from the oven to the milling_machine | Sub-tarefa: dropping off the workpiece at the milling_machine'? </td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs indicam que a estação OV_1 estava em estado "not ready" e realizava a tarefa de pegar um peça do forno (OV) e transportá-la para o máquina de corte (milling_machine), especificamente na sub-tarefa de entregar a peça na máquina. Ao mesmo tempo, as estações EC_1 estavam em estado …</td>
+  <td>0.108</td>
+  <td>0.793</td>
+  <td>786.01s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>cross_station</td>
+  <td>MM_1, WT_1<br/><small style="color:#888">transporting the workpiece from the init</small></td>
+  <td style="max-width:280px;font-size:13px">O que estava acontecendo em 'WT_1' enquanto 'MM_1' não estava pronto (not ready) e se movia para a posição inicial (moving towards the initial position)?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos indicam que a estação MM_1 estava no estado "not ready" e realizando o movimento para a posição inicial (moving towards the initial position) em várias ocasiões. Este comportamento foi observado em três registros similares, sugerindo que esta é uma situação recorrente…</td>
+  <td>0.109</td>
+  <td>0.777</td>
+  <td>1.54s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>cross_station</td>
+  <td>HBW_1, MM_1<br/><small style="color:#888">storing a new workpiece in slot 3</small></td>
+  <td style="max-width:280px;font-size:13px">O que estava acontecendo em 'MM_1' enquanto 'HBW_1' estava armazenando um novo peço de trabalho no slot 3 e colocando a tábua na posição?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">### Diagnóstico:
+
+Os logs fornecidos indicam que a estação HBW_1 estava em um estado "not ready" e realizando tarefas relacionadas à armazenagem de um novo peço de trabalho no slot 3, enquanto as estações MM_1 estavam com o estado "ready" e inativas (idle). Isso sugere que a operação da HBW_1 não fo…</td>
+  <td>0.137</td>
+  <td>0.831</td>
+  <td>428.25s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>cross_station</td>
+  <td>SM_1, WT_1<br/><small style="color:#888">sorting the workpiece which is located a</small></td>
+  <td style="max-width:280px;font-size:13px">O que estava acontecendo em 'WT_1' enquanto 'SM_1' apresentava o comportamento de não estar pronto (not ready) e realizando a exclusão do workpiece para o sink 2?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os registros indicam que a estação SM_1 estava em um estado de "not ready" e realizava tarefas relacionadas à exclusão do workpiece para o sink 2. Houve uma repetição nesses logs durante diferentes momentos, sugerindo que houve algum problema contínuo ou inconsistente.
+
+Causa provável:
+…</td>
+  <td>0.126</td>
+  <td>0.792</td>
+  <td>180.43s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>cross_station</td>
+  <td>VGR_1, OV_1<br/><small style="color:#888">picking up and transporting the workpiec</small></td>
+  <td style="max-width:280px;font-size:13px">O que estava acontecendo em 'OV_1' enquanto 'VGR_1' não estava pronto e calibrando o motor 3 para transportar a peça do sink_3 para o high_bay_warehouse_delivery_station?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs indicam que a estação VGR_1 estava em estado "not ready" e realizando a calibração do motor 3, com o objetivo de transportar um trabalho do sink_3 para a high_bay_warehouse_delivery_station. Isso foi observado várias vezes no mesmo período.
+
+Causa provável do problema ou comport…</td>
+  <td>0.142</td>
+  <td>0.844</td>
+  <td>10.89s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>cross_station</td>
+  <td>OV_1, SM_1<br/><small style="color:#888">picking up and transporting the workpiec</small></td>
+  <td style="max-width:280px;font-size:13px">O que estava acontecendo em 'SM_1' enquanto 'OV_1' não estava pronto para receber o trabalho devido à sub-tarefa de encaminhar o objeto para a máquina de fresagem?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">1. Diagnóstico: Os logs indicam que a estação SM_1 estava em estado "ready" e tarefa "idle" durante o período de tempo especificado. Isso significa que a estação estava pronta para realizar uma tarefa, mas não estava executando nenhuma.
+
+2. Causa provável do problema ou comportamento observado: Embo…</td>
+  <td>0.135</td>
+  <td>0.749</td>
+  <td>1010.37s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>cross_station</td>
+  <td>MM_1, WT_1<br/><small style="color:#888">transporting the workpiece from the init</small></td>
+  <td style="max-width:280px;font-size:13px">O que estava acontecendo em 'WT_1' enquanto 'MM_1' não estava pronto e se movia para a posição inicial?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos mostram que a estação MM_1 estava em estado "ready" e tarefa "idle", o que indica que ela estava pronta para uma tarefa, mas sem nenhuma atividade em andamento.
+
+Causa Provável do Problema ou Comportamento Observado:
+Dada a informação disponível nos logs fornecidos, n…</td>
+  <td>0.122</td>
+  <td>0.721</td>
+  <td>841.80s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>causal</td>
+  <td>HBW_1<br/><small style="color:#888">storing a new workpiece in slot 3</small></td>
+  <td style="max-width:280px;font-size:13px">Qual sub-tarefa antecedeu a 'storing a new workpiece in slot 3 | dropping off the bucket at the slot' na estação HBW_1 e por que isso resultou no estado 'not ready'? </td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs indicam que a estação HBW_1 realizou várias vezes a mesma tarefa consecutivamente: "storing a new workpiece in slot 3 | dropping off the bucket at the slot" com o estado de "not ready". Isso sugere um comportamento repetitivo, onde a estação tenta armazenar novos peças no mesmo …</td>
+  <td>0.173</td>
+  <td>0.866</td>
+  <td>7.28s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>causal</td>
+  <td>SM_1<br/><small style="color:#888">sorting the workpiece which is located a</small></td>
+  <td style="max-width:280px;font-size:13px">Qual sub-tarefa antecedeu e qual indicação a sequência sub-tarefa anterior → estado atual proporciona sobre o motivo pelo qual a tarefa de 'ejecting the workpiece to the sink 2' levou ao estado 'not ready'? </td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos indicam que a tarefa de "picking up and transporting the workpiece from the sink_2 to the high_bay_warehouse_delivery_station" está em estado 'not ready' várias vezes, com sub-tarefas relacionadas ao movimento em direção ao sink 2. Isso sugere que o sistema tenta real…</td>
+  <td>0.183</td>
+  <td>0.775</td>
+  <td>669.91s</td>
+  <td>0.00</td>
+</tr>
+<tr>
+  <td>causal</td>
+  <td>VGR_1<br/><small style="color:#888">picking up and transporting the workpiec</small></td>
+  <td style="max-width:280px;font-size:13px">Por que a sub-tarefa 'calibrating motor 3' executada imediatamente antes da tarefa atual na mesma estação resultou em um estado 'not ready' com uma duração alta de 38.597s?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">### Diagnóstico:
+Os logs indicam que a sub-tarefa "calibrando motor 3" foi executada repetidamente na estação VGR_1 e resultou em um estado "not ready". Além disso, observamos uma duração alta de 38.597 segundos para esta sub-tarefa.
+
+### Causa Provável do Problema ou Comportamento Observado:
+A caus…</td>
+  <td>0.170</td>
+  <td>0.861</td>
+  <td>949.30s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>causal</td>
+  <td>OV_1<br/><small style="color:#888">picking up and transporting the workpiec</small></td>
+  <td style="max-width:280px;font-size:13px">Qual sub-tarefa antecedeu a 'dropping off the workpiece at the milling_machine' que poderia indicar um problema de alinhamento ou posicionamento inadequado do trabalho no forno antes da sub-tarefa atual?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">1. **Diagnóstico**: Os logs indicam que a estação OV_1 (forno) estava em estado "not ready" durante os instantes em que as tarefas de transporte e entrega do trabalho para a máquina de corte (milling_machine) estavam sendo realizadas. Isso sugere que o forno não estava pronto para a entrega, possive…</td>
+  <td>0.151</td>
+  <td>0.824</td>
+  <td>528.05s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>causal</td>
+  <td>MM_1<br/><small style="color:#888">transporting the workpiece from the init</small></td>
+  <td style="max-width:280px;font-size:13px">Qual sub-tarefa antecedeu a movimentação para a posição inicial que levou à situação 'not ready' na estação MM_1?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico: Os logs indicam que a estação MM_1 estava em estado "ready" e tarefa "idle" durante vários instantes consecutivos (04/11/2023 às 10:17:01). Não há informações sobre movimentações de posicionamento ou sub-tarefas anteriores.
+
+Causa provável do problema ou comportamento observado: De acor…</td>
+  <td>0.135</td>
+  <td>0.805</td>
+  <td>119.24s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>causal</td>
+  <td>HBW_1<br/><small style="color:#888">storing a new workpiece in slot 3</small></td>
+  <td style="max-width:280px;font-size:13px">Qual sub-tarefa antecedeu 'dropping off the bucket at the slot' que poderia indicar um motivo para o estado 'not ready' na sub-tarefa 'storing a new workpiece in slot 3'? Isso por que a duração alta nesta sub-tarefa pode sugerir uma falha no processo de armazenamento anterior?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">### Diagnóstico:
+Os logs indicam que a estação HBW_1 está frequentemente em um estado "not ready" enquanto tenta armazenar uma nova peça no slot 3. As sub-tarefas mencionadas são: 
+- Picking up the bucket from the slot (retirando o recipiente do slot)
+- Dropping off the bucket at the slot (depositan…</td>
+  <td>0.161</td>
+  <td>0.823</td>
+  <td>24.33s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>causal</td>
+  <td>SM_1<br/><small style="color:#888">sorting the workpiece which is located a</small></td>
+  <td style="max-width:280px;font-size:13px">Qual sub-tarefa antecedeu que poderia indicar uma causa raiz para o estado 'not ready' da tarefa atual 'sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none | Sub-tarefa: ejecting the workpiece to the sink 2'? </td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos demonstram que a estação SM_1 está repetidamente no estado "not ready" enquanto tenta executar a tarefa de colocar um trabalho inicial em uma posição predeterminada usando um leitor NFC e, subsequente a isso, descartar o trabalho na torneira 3. Nenhuma informação indi…</td>
+  <td>0.127</td>
+  <td>0.764</td>
+  <td>926.22s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>causal</td>
+  <td>VGR_1<br/><small style="color:#888">picking up and transporting the workpiec</small></td>
+  <td style="max-width:280px;font-size:13px">Qual sub-tarefa antecedeu a calibragem do motor 3 que levou à duração alta e ao estado 'not ready' na tarefa de pegar e transportar o trabalho do sink_3 para a high_bay_warehouse_delivery_station?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">### Diagnóstico:
+Os logs indicam que a estação VGR_1 está em um estado "not ready" e realizando uma tarefa de pegar e transportar o trabalho do sink_3 para a high_bay_warehouse_delivery_station, com uma sub-tarefa específica de calibrar o motor 3. Essa situação ocorreu várias vezes entre as horas 10…</td>
+  <td>0.164</td>
+  <td>0.814</td>
+  <td>595.96s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>causal</td>
+  <td>OV_1<br/><small style="color:#888">picking up and transporting the workpiec</small></td>
+  <td style="max-width:280px;font-size:13px">Qual sub-tarefa antecedeu a 'dropping off the workpiece at the milling_machine' na mesma estação que indica possíveis problemas de deslocamento do trabalho no processo atual?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs mostram que a estação OV_1 está repetidamente em estado "not ready" enquanto realiza a tarefa de pegar e transportar o trabalho do forno para a máquina de corte (milling_machine). Em todas as observações, a sub-tarefa final realizada é a entrega do objeto de trabalho à máquina d…</td>
+  <td>0.213</td>
+  <td>0.809</td>
+  <td>580.89s</td>
+  <td>1.00</td>
+</tr>
+<tr>
+  <td>causal</td>
+  <td>MM_1<br/><small style="color:#888">transporting the workpiece from the init</small></td>
+  <td style="max-width:280px;font-size:13px">Por que a sub-tarefa 'moving towards the initial position' demorou 11.152s e resultou no estado atual de 'not ready' na estação MM_1?</td>
+  <td style="max-width:300px;font-size:12px;color:#555">Diagnóstico:
+Os logs fornecidos indicam que a estação MM_1 está em um estado 'ready' e tarefa 'idle', ou seja, a estação parece estar inativa e pronta para realizar uma tarefa. Os logs não mostram nenhuma informação sobre a sub-tarefa 'moving towards the initial position' nem o tempo associado a ess…</td>
+  <td>0.128</td>
+  <td>0.792</td>
+  <td>131.40s</td>
+  <td>1.00</td>
+</tr></tbody>
+</table>
+</body>
+</html>

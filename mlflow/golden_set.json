@@ -84,7 +84,7 @@
       "current_sub_task": "dropping off the bucket at the conveyor belt",
       "current_task_duration": 39.538391
     },
-    "question": "Qual é o estado da estação HBW_1 no timestamp dado?",
+    "question": "Qual é o estado da estação HBW_1 no timestamp 2023-04-11 10:30:31.560000?",
     "reference_answer": "A estação HBW_1 está em estado not ready no timestamp 2023-04-11 10:30:31.560000.",
     "station": "HBW_1",
     "current_task": "unloading a workpiece from slot 4",
@@ -153,7 +153,7 @@
       "current_sub_task": "transporting the workpiece to the inside of the oven",
       "current_task_duration": 5.718702
     },
-    "question": "Qual é o estado atual da estação OV_1 no timestamp dado?",
+    "question": "Qual é o estado atual da estação OV_1 no timestamp 2023-04-11 10:31:25.080000?",
     "reference_answer": "No timestamp 2023-04-11 10:31:25.080000, a estação OV_1 está em estado not ready.",
     "station": "OV_1",
     "current_task": "burning the workpiece for 2 seconds",
@@ -176,7 +176,7 @@
       "current_sub_task": "opening the oven door",
       "current_task_duration": 17.765051
     },
-    "question": "Qual é o estado da estação OV_1 no timestamp dado?",
+    "question": "Qual é o estado da estação OV_1 no timestamp 2023-04-11 10:27:13.650000?",
     "reference_answer": "A estação OV_1 estava não pronta (not ready) no timestamp 2023-04-11 10:27:13.650000.",
     "station": "OV_1",
     "current_task": "burning the workpiece for 2 seconds",

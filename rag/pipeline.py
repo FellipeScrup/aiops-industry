@@ -6,7 +6,7 @@ import sys
 from dotenv import load_dotenv
 
 from rag.generator import generate
-from rag.retriever import retrieve
+from rag.retriever import retrieve, retrieve_hybrid
 
 load_dotenv()
 
@@ -17,19 +17,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def query(user_input: str, top_k: int = 5, model: str = "llama3.2:3b") -> dict:
+def query(
+    user_input: str,
+    top_k: int = 5,
+    model: str = "llama3.2:3b",
+    use_hybrid: bool = False,
+) -> dict:
     """Run the full RAG pipeline for a technician query.
 
     Args:
         user_input: Natural language question.
         top_k: Number of similar telemetry windows to retrieve.
         model: LLM model identifier (Ollama name or "gemini").
+        use_hybrid: If True, use retrieve_hybrid (filtro escalar station/timestamp
+            + multi-query para cross-station). Default False (vector search puro).
 
     Returns:
         Dict with keys: question, context, answer, retrieval_scores, model_used.
     """
-    logger.info("Iniciando pipeline RAG para: %r (model=%s)", user_input, model)
-    context = retrieve(user_input, top_k=top_k)
+    logger.info("Iniciando pipeline RAG para: %r (model=%s, hybrid=%s)",
+                user_input, model, use_hybrid)
+    retriever_fn = retrieve_hybrid if use_hybrid else retrieve
+    context = retriever_fn(user_input, top_k=top_k)
     answer = generate(user_input, context, model=model)
     return {
         "question": user_input,

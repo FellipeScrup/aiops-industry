@@ -43,7 +43,7 @@ from fastembed import TextEmbedding
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rag.generator import call_raw, generate
-from rag.retriever import retrieve
+from rag.retriever import retrieve, retrieve_hybrid
 
 load_dotenv()
 
@@ -701,49 +701,154 @@ def _run_rag(question: str) -> tuple[str, list[dict]]:
     return answer, hits
 
 
+def _run_rag_hybrid(question: str) -> tuple[str, list[dict]]:
+    hits = retrieve_hybrid(question, top_k=5)
+    answer = generate(question, hits, model=GEN_MODEL)
+    return answer, hits
+
+
 _RUN_FN = {
-    "baseline": _run_baseline,
-    "rag":      _run_rag,
+    "baseline":   _run_baseline,
+    "rag":        _run_rag,
+    "rag_hybrid": _run_rag_hybrid,
 }
+
+TIERS = ("factual", "cross_station", "causal")
+METRIC_KEYS = (
+    "rouge_l",
+    "semantic_similarity",
+    "avg_retrieval_score",
+    "temporal_proximity_s",  # média |Δt| (s) entre top-k hits e evidence timestamp
+    "station_match_rate",    # % dos hits cuja station ∈ stations da pergunta
+)
+
+# Em telemetria 10Hz, a métrica "exact event_id match" (recall@k) é fundamentalmente
+# severa: dentro de uma janela ±5s da pergunta existem ~100 eventos semanticamente
+# quase idênticos (mesmo state/task/sub_task), e o top-k cai em 5 quaisquer.
+# Usamos duas métricas mais sensatas:
+#   - temporal_proximity_s: quão perto, em SEGUNDOS, os hits estão do evento alvo.
+#     Vetor puro pode trazer hits a centenas de segundos do alvo;
+#     hybrid traz hits a ~1-3s.
+#   - station_match_rate: para cross_station, quantos dos top-k vêm das estações
+#     citadas na pergunta. Vetor puro cai em viés de VGR_1; hybrid acerta.
+_TS_FMT = "%Y-%m-%d %H:%M:%S.%f"
+
+
+def _parse_ts(s: str):
+    """Parse 'YYYY-MM-DD HH:MM:SS[.ffffff]' → datetime, com tolerância a microssegundos curtos."""
+    from datetime import datetime
+    if not s:
+        return None
+    if "." not in s:
+        s = s + ".000000"
+    else:
+        head, frac = s.split(".", 1)
+        frac = (frac + "000000")[:6]
+        s = f"{head}.{frac}"
+    try:
+        return datetime.strptime(s, _TS_FMT)
+    except ValueError:
+        return None
 
 
 # ── Métricas ──────────────────────────────────────────────────────────────────
 
-def _compute_metrics(answer: str, reference: str, hits: list[dict]) -> dict:
+def _compute_metrics(
+    answer: str,
+    reference: str,
+    hits: list[dict],
+    pair_timestamp: str | None,
+    pair_stations: list[str],
+) -> dict:
     rl      = rouge_l(answer, reference)
     sem_sim = _cosine(_embed(answer), _embed(reference))
     avg_score = float(np.mean([h["score"] for h in hits])) if hits else 0.0
+
+    if hits and pair_timestamp:
+        target = _parse_ts(pair_timestamp)
+        if target is not None:
+            deltas = []
+            for h in hits:
+                ht = _parse_ts(h.get("event_timestamp", ""))
+                if ht is not None:
+                    deltas.append(abs((ht - target).total_seconds()))
+            temporal = float(np.mean(deltas)) if deltas else -1.0
+        else:
+            temporal = -1.0
+    else:
+        temporal = -1.0  # sentinel: baseline (sem hits) ou pergunta sem timestamp
+
+    if hits and pair_stations:
+        wanted = set(pair_stations)
+        matches = sum(1 for h in hits if h.get("station", "") in wanted)
+        st_match = matches / len(hits)
+    else:
+        st_match = 0.0
+
     return {
-        "rouge_l":             round(rl, 4),
-        "semantic_similarity": round(float(sem_sim), 4),
-        "avg_retrieval_score": round(avg_score, 4),
+        "rouge_l":              round(rl, 4),
+        "semantic_similarity":  round(float(sem_sim), 4),
+        "avg_retrieval_score":  round(avg_score, 4),
+        "temporal_proximity_s": round(float(temporal), 4),
+        "station_match_rate":   round(float(st_match), 4),
     }
 
 
 def _evaluate_condition(golden: list[dict], condition: str) -> tuple[dict, list[dict]]:
     run_fn = _RUN_FN[condition]
-    buckets: dict[str, list[float]] = {
-        "rouge_l": [], "semantic_similarity": [], "avg_retrieval_score": [],
+    buckets: dict[str, list[float]] = {k: [] for k in METRIC_KEYS}
+    by_tier: dict[str, dict[str, list[float]]] = {
+        t: {k: [] for k in METRIC_KEYS} for t in TIERS
     }
     per_q: list[dict] = []
 
     for i, pair in enumerate(golden, 1):
         logger.info("  [%s] Q%d/%d — %s", condition, i, len(golden), pair["question"][:70])
         answer, hits = run_fn(pair["question"])
-        m = _compute_metrics(answer, pair["reference_answer"], hits)
+        evidence_ids = pair.get("evidence_event_ids", [])
+        pair_ts = pair.get("event_timestamp")
+        pair_stations = pair.get("stations") or [pair.get("station", "")]
+        m = _compute_metrics(
+            answer, pair["reference_answer"], hits, pair_ts, pair_stations,
+        )
+
         for k in buckets:
             buckets[k].append(m[k])
+
+        tier = pair.get("tier")
+        if tier in by_tier:
+            for k in METRIC_KEYS:
+                by_tier[tier][k].append(m[k])
+
+        stations_field = pair.get("stations") or [pair.get("station", "")]
         per_q.append({
-            "station":       pair["station"],
-            "current_task":  pair["current_task"],
-            "question":      pair["question"],
+            "tier":             tier or "?",
+            "stations":         stations_field,
+            "station":          ", ".join(stations_field) if isinstance(stations_field, list) else stations_field,
+            "current_task":     pair.get("scenario_context", {}).get("current_task", pair.get("current_task", "")),
+            "question":         pair["question"],
             "reference_answer": pair["reference_answer"],
-            "answer":        answer,
+            "answer":           answer,
+            "evidence_event_ids": evidence_ids,
+            "retrieved_event_ids": [h.get("event_id", "") for h in hits],
             **m,
         })
 
-    aggregated = {k: round(float(np.mean(v)), 4) for k, v in buckets.items()}
+    def _agg(vals: list[float], key: str) -> float:
+        # temporal_proximity_s usa -1 como sentinel "sem dado" — filtrar.
+        if key == "temporal_proximity_s":
+            vals = [v for v in vals if v >= 0]
+        if not vals:
+            return -1.0
+        return round(float(np.mean(vals)), 4)
+
+    aggregated = {k: _agg(v, k) for k, v in buckets.items()}
     aggregated["n_questions"] = len(golden)
+    aggregated["by_tier"] = {}
+    for tier, vals in by_tier.items():
+        if vals[METRIC_KEYS[0]]:
+            aggregated["by_tier"][tier] = {k: _agg(vals[k], k) for k in METRIC_KEYS}
+            aggregated["by_tier"][tier]["n"] = len(vals[METRIC_KEYS[0]])
     return aggregated, per_q
 
 
@@ -751,22 +856,44 @@ def _evaluate_condition(golden: list[dict], condition: str) -> tuple[dict, list[
 
 def _build_html_report(results: dict[str, tuple[dict, list[dict]]]) -> str:
     conditions = list(results.keys())
-    METRICS = ["rouge_l", "semantic_similarity", "avg_retrieval_score"]
+    METRICS = [
+        "rouge_l", "semantic_similarity", "avg_retrieval_score",
+        "temporal_proximity_s", "station_match_rate",
+    ]
     LABELS  = {
-        "rouge_l":             "ROUGE-L",
-        "semantic_similarity": "Sem. Similarity",
-        "avg_retrieval_score": "Avg Retrieval Score",
+        "rouge_l":              "ROUGE-L",
+        "semantic_similarity":  "Sem. Similarity",
+        "avg_retrieval_score":  "Avg Retrieval Score",
+        "temporal_proximity_s": "Temporal Δt (s)",
+        "station_match_rate":   "Station Match",
     }
+    # Métricas onde MENOR é melhor (vs. maior é melhor por padrão).
+    LOWER_IS_BETTER = {"temporal_proximity_s"}
+
+    def _fmt(m: str, v: float) -> str:
+        if v is None or v < 0:
+            return "N/A"
+        if m == "temporal_proximity_s":
+            return f"{v:.2f}s"
+        return f"{v:.4f}"
+
+    def _best(m: str, vals: list[float]) -> float:
+        valid = [v for v in vals if v is not None and v >= 0]
+        if not valid:
+            return None
+        return min(valid) if m in LOWER_IS_BETTER else max(valid)
 
     header_cells = "".join(f"<th>{c}</th>" for c in conditions)
     summary_rows = ""
     for m in METRICS:
         vals = [results[c][0].get(m, 0.0) for c in conditions]
-        best = max(vals)
+        best = _best(m, vals)
         cells = ""
         for v in vals:
-            style = "background:#c8f7c5;font-weight:bold" if v == best and best > 0 else ""
-            cells += f'<td style="{style}">{v:.4f}</td>'
+            style = ""
+            if best is not None and v == best and not (m in LOWER_IS_BETTER and best < 0):
+                style = "background:#c8f7c5;font-weight:bold"
+            cells += f'<td style="{style}">{_fmt(m, v)}</td>'
         summary_rows += f"<tr><td><b>{LABELS[m]}</b></td>{cells}</tr>\n"
 
     summary_table = f"""
@@ -778,24 +905,76 @@ def _build_html_report(results: dict[str, tuple[dict, list[dict]]]) -> str:
   <tbody>{summary_rows}</tbody>
 </table>"""
 
-    _, rag_qs = results.get("rag", ({}, []))
+    # ── Tabela 1b: breakdown por tier ─────────────────────────────────────
+    # 1 linha por (tier, metric); colunas = condições.
+    tier_rows_html = ""
+    for tier in TIERS:
+        n_for_tier = 0
+        for c in conditions:
+            sub = results[c][0].get("by_tier", {}).get(tier)
+            if sub:
+                n_for_tier = sub.get("n", 0)
+                break
+        if n_for_tier == 0:
+            continue
+        tier_rows_html += (
+            f'<tr><th rowspan="{len(METRICS)}" style="background:#ecf0f1">'
+            f'{tier}<br/><small>(n={n_for_tier})</small></th>'
+        )
+        for i, m in enumerate(METRICS):
+            if i > 0:
+                tier_rows_html += "<tr>"
+            tier_rows_html += f"<td>{LABELS[m]}</td>"
+            vals = []
+            for c in conditions:
+                sub = results[c][0].get("by_tier", {}).get(tier, {})
+                vals.append(sub.get(m, 0.0))
+            best = _best(m, vals)
+            for v in vals:
+                style = ""
+                if best is not None and v == best:
+                    style = "background:#c8f7c5;font-weight:bold"
+                tier_rows_html += f'<td style="{style}">{_fmt(m, v)}</td>'
+            tier_rows_html += "</tr>\n"
+
+    tier_header_cells = "".join(f"<th>{c}</th>" for c in conditions)
+    tier_table = f"""
+<table border="1" cellpadding="6" cellspacing="0"
+       style="border-collapse:collapse;font-family:monospace;margin-bottom:30px">
+  <thead style="background:#1a5276;color:#fff">
+    <tr><th>Tier</th><th>Métrica</th>{tier_header_cells}</tr>
+  </thead>
+  <tbody>{tier_rows_html}</tbody>
+</table>"""
+
+    # ── Tabela 3: detalhe por pergunta ────────────────────────────────────
+    # Mostra rag_hybrid se disponível, senão rag.
+    detail_cond = "rag_hybrid" if "rag_hybrid" in results else "rag"
+    _, detail_qs = results.get(detail_cond, ({}, []))
     detail_rows = ""
-    for q in rag_qs:
+    for q in detail_qs:
+        temp = q.get("temporal_proximity_s", -1.0)
+        st_match = q.get("station_match_rate", 0.0)
+        temp_str = f"{temp:.2f}s" if temp >= 0 else "N/A"
         detail_rows += f"""
 <tr>
-  <td>{q['station']}<br/><small style="color:#888">{q.get('current_task','')[:40]}</small></td>
+  <td>{q.get('tier','?')}</td>
+  <td>{q.get('station','')}<br/><small style="color:#888">{(q.get('current_task') or '')[:40]}</small></td>
   <td style="max-width:280px;font-size:13px">{q['question']}</td>
   <td style="max-width:300px;font-size:12px;color:#555">{q['answer'][:300]}…</td>
   <td>{q['rouge_l']:.3f}</td>
   <td>{q['semantic_similarity']:.3f}</td>
+  <td>{temp_str}</td>
+  <td>{st_match:.2f}</td>
 </tr>"""
 
     detail_table = f"""
+<p>Detalhe abaixo refere-se à condição <code>{detail_cond}</code>.</p>
 <table border="1" cellpadding="6" cellspacing="0"
        style="border-collapse:collapse;font-family:monospace;width:100%">
   <thead style="background:#34495e;color:#fff">
-    <tr><th>Estação</th><th>Pergunta</th><th>Resposta (trecho)</th>
-        <th>ROUGE-L</th><th>Sem.Sim</th></tr>
+    <tr><th>Tier</th><th>Estação</th><th>Pergunta</th><th>Resposta (trecho)</th>
+        <th>ROUGE-L</th><th>Sem.Sim</th><th>Temporal Δt</th><th>Station Match</th></tr>
   </thead>
   <tbody>{detail_rows}</tbody>
 </table>"""
@@ -825,7 +1004,7 @@ def _build_html_report(results: dict[str, tuple[dict, list[dict]]]) -> str:
   <tbody>{delta_rows}</tbody>
 </table>"""
 
-    n_qs = len(rag_qs) if rag_qs else len(results.get("baseline", ({}, []))[1])
+    n_qs = len(detail_qs) if detail_qs else len(results.get("baseline", ({}, []))[1])
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -848,10 +1027,13 @@ def _build_html_report(results: dict[str, tuple[dict, list[dict]]]) -> str:
   <h2>1. Comparação entre condições (média)</h2>
   {summary_table}
 
+  <h2>1b. Breakdown por tier</h2>
+  {tier_table}
+
   <h2>2. Delta vs baseline (ganho do RAG)</h2>
   {delta_table}
 
-  <h2>3. Detalhe por pergunta — condição <em>rag</em></h2>
+  <h2>3. Detalhe por pergunta — condição <em>{detail_cond}</em></h2>
   {detail_table}
 </body>
 </html>"""
@@ -882,8 +1064,21 @@ def log_to_mlflow(
                 mlflow.log_param("model",       GEN_MODEL)
                 mlflow.log_param("n_questions", aggregated["n_questions"])
 
-                numeric = {k: v for k, v in aggregated.items() if k != "n_questions"}
-                mlflow.log_metrics(numeric)
+                # Métricas top-level (média sobre todo o golden set). Pula
+                # valores -1.0 (sentinel "sem dado" do temporal_proximity_s).
+                top_level = {
+                    k: v for k, v in aggregated.items()
+                    if k not in ("n_questions", "by_tier") and v != -1.0
+                }
+                mlflow.log_metrics(top_level)
+
+                # Breakdown por tier — flatten para 'tier_<tier>_<metric>'.
+                for tier, sub in aggregated.get("by_tier", {}).items():
+                    flat = {
+                        f"tier_{tier}_{k}": v
+                        for k, v in sub.items() if k != "n" and v != -1.0
+                    }
+                    mlflow.log_metrics(flat)
 
                 per_q_path = f"/tmp/per_q_{condition}.json"
                 Path(per_q_path).write_text(
@@ -912,8 +1107,8 @@ def main() -> None:
                         help="Regenera o golden set mesmo que exista.")
     parser.add_argument("--skip-eval",  action="store_true",
                         help="Só gera/exibe o golden set, sem avaliar.")
-    parser.add_argument("--conditions", default="baseline,rag",
-                        help="Condições a avaliar (csv). Default: baseline,rag")
+    parser.add_argument("--conditions", default="baseline,rag,rag_hybrid",
+                        help="Condições a avaliar (csv). Default: baseline,rag,rag_hybrid")
     parser.add_argument("--tiered",     action="store_true",
                         help="Usa golden set tiered (factual+cross_station+causal). "
                              "Sem a flag, mantém comportamento legado (top-25 anomalias).")

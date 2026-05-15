@@ -42,13 +42,13 @@ def analyze(question: str, top_k: int, model: str) -> tuple[str, str, str]:
 
     context_lines: list[str] = []
     for rank, hit in enumerate(data.get("context", []), start=1):
-        down = (hit.get("pct_downtime") or 0) * 100
-        idle = (hit.get("pct_idle") or 0) * 100
-        perf = (hit.get("pct_perf_loss") or 0) * 100
+        task = hit.get("current_task") or "idle"
+        sub = hit.get("current_sub_task") or ""
+        sub_part = f" | Sub-task: {sub}" if sub else ""
         context_lines.append(
             f"Rank {rank} (score: {hit['score']:.4f}): "
-            f"Máquina {hit.get('machine_id', '?')} | {hit.get('interval_start', '?')} "
-            f"| Downtime {down:.1f}% | Idle {idle:.1f}% | Perf. Loss {perf:.1f}%"
+            f"Estação {hit.get('station', '?')} | {hit.get('event_timestamp', '?')} "
+            f"| State: {hit.get('current_state', '?')} | Task: {task}{sub_part}"
         )
     context_str = "\n".join(context_lines)
 
@@ -67,8 +67,8 @@ with gr.Blocks(title="AIOps Industry — Análise de Telemetria Industrial") as 
     with gr.Row():
         with gr.Column():
             question_input = gr.Textbox(
-                label="Descreva o comportamento da máquina:",
-                placeholder="Ex: máquina s_1 com alto downtime, ou: queda de velocidade na máquina s_3",
+                label="Descreva o comportamento da estação:",
+                placeholder="Ex: VGR_1 not ready during workpiece transport, ou: HBW_1 calibration taking too long",
                 lines=3,
             )
             with gr.Row():
@@ -88,7 +88,7 @@ with gr.Blocks(title="AIOps Industry — Análise de Telemetria Industrial") as 
 
         with gr.Column():
             answer_output = gr.Textbox(label="Diagnóstico do Assistente", lines=10)
-            context_output = gr.Textbox(label="Janelas de Telemetria Recuperadas", lines=6)
+            context_output = gr.Textbox(label="Logs Recuperados", lines=6)
             scores_output = gr.Textbox(label="Scores / Modelo / Tempo", lines=3)
 
     analyze_btn.click(

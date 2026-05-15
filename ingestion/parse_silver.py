@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
 MINIO_ROOT_USER: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
 MINIO_ROOT_PASSWORD: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
-BUCKET: str = "smartfactory"
+BUCKET: str = "bronze"
 
 # PostgreSQL
 POSTGRES_USER: str = os.getenv("POSTGRES_USER", "aiops")
@@ -51,8 +51,8 @@ INSERT_SQL = text("""
 """)
 
 _LOG_FILES: list[tuple[str, str]] = [
-    ("logs/training.txt", "train"),
-    ("logs/test.txt",     "test"),
+    ("smartfactory/logs/training.txt", "train"),
+    ("smartfactory/logs/test.txt",     "test"),
 ]
 
 

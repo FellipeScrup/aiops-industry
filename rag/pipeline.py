@@ -5,7 +5,7 @@ import sys
 
 from dotenv import load_dotenv
 
-from rag.generator import generate
+from rag.generator import DEFAULT_MODEL, generate
 from rag.retriever import retrieve, retrieve_hybrid
 
 load_dotenv()
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 def query(
     user_input: str,
     top_k: int = 5,
-    model: str = "llama3.2:3b",
+    model: str = DEFAULT_MODEL,
     use_hybrid: bool = False,
 ) -> dict:
     """Run the full RAG pipeline for a technician query.
@@ -50,25 +50,36 @@ def query(
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print('Uso: make rag-query QUERY="sua pergunta"', file=sys.stderr)
+    args = sys.argv[1:]
+    use_hybrid = False
+    if "--hybrid" in args:
+        use_hybrid = True
+        args = [a for a in args if a != "--hybrid"]
+
+    if not args or not args[0].strip():
+        print(
+            'Uso: make rag-query QUERY="sua pergunta" [FLAGS="--hybrid"]',
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    result = query(sys.argv[1])
+    result = query(args[0], use_hybrid=use_hybrid)
 
     print("\n" + "=" * 60)
     print(f"PERGUNTA: {result['question']}")
     print("=" * 60)
 
-    print("\nJANELAS DE TELEMETRIA RECUPERADAS:")
+    print("\nLOGS RECUPERADOS:")
     for rank, hit in enumerate(result["context"], start=1):
+        sub = hit.get("current_sub_task") or ""
+        sub_part = f" | Sub-task: {sub}" if sub else ""
         print(
             f"  Rank {rank} (score: {hit['score']:.4f}):"
-            f" Máquina {hit['machine_id']}"
-            f" | Janela {hit['interval_start']}"
-            f" | Downtime {hit['pct_downtime'] * 100:.1f}%"
-            f" | Idle {hit['pct_idle'] * 100:.1f}%"
-            f" | Perf. Loss {hit['pct_perf_loss'] * 100:.1f}%"
+            f" Estação {hit['station']}"
+            f" | {hit['event_timestamp']}"
+            f" | State: {hit['current_state']}"
+            f" | Task: {hit.get('current_task') or 'idle'}"
+            f"{sub_part}"
         )
 
     print("\nRESPOSTA DO ASSISTENTE:")

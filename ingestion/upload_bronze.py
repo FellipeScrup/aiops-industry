@@ -1,4 +1,4 @@
-"""Upload Smart Factory log files from local ../14441997/ into MinIO bucket 'smartfactory'."""
+"""Upload Smart Factory log files from local data/bronze/ into MinIO bucket 'bronze'."""
 
 import logging
 import os
@@ -19,15 +19,15 @@ logger = logging.getLogger(__name__)
 MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
 MINIO_ROOT_USER: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
 MINIO_ROOT_PASSWORD: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
-BUCKET: str = "smartfactory"
+BUCKET: str = "bronze"
 
 _DATASET_DIR = Path("data/bronze/14441997")
 
-# (local_path, s3_key)
+# (local_path, s3_key)  — prefixo smartfactory/ organiza datasets futuros no mesmo bucket
 FILES: list[tuple[Path, str]] = [
-    (_DATASET_DIR / "training_tenhertz_log_20230411-095748.txt", "logs/training.txt"),
-    (_DATASET_DIR / "test_tenhertz_log_20230411-103455.txt",     "logs/test.txt"),
-    (_DATASET_DIR / "camunda-activity.json",                     "bpmn/camunda-activity.json"),
+    (_DATASET_DIR / "training_tenhertz_log_20230411-095748.txt", "smartfactory/logs/training.txt"),
+    (_DATASET_DIR / "test_tenhertz_log_20230411-103455.txt",     "smartfactory/logs/test.txt"),
+    (_DATASET_DIR / "camunda-activity.json",                     "smartfactory/bpmn/camunda-activity.json"),
 ]
 
 
@@ -82,7 +82,7 @@ def main() -> None:
         raise
 
     logger.info(
-        "Bronze upload concluído. %d arquivo(s) enviado(s) para s3://%s/",
+        "Bronze upload concluído. %d arquivo(s) enviado(s) para s3://%s/smartfactory/",
         len(FILES),
         BUCKET,
     )

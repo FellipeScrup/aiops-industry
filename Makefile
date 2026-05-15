@@ -4,6 +4,7 @@ COMPOSE := docker compose -f infra/docker/docker-compose.yml --env-file .env
 
 .PHONY: help up down logs ps restart clean status \
         create-tables ingest-bronze ingest-silver ingest-all \
+        export-silver export-gold medallion \
         preprocess train-ad eval-rag eval-rag-gen \
         golden-set validate-golden \
         embed test-retrieval \
@@ -58,6 +59,14 @@ ingest-silver: ## Processa Bronze → Silver (normaliza e persiste no PostgreSQL
 
 ingest-all: create-tables ingest-bronze ingest-silver ## Pipeline completo: DDL → Bronze (MinIO) → Silver (PostgreSQL)
 
+export-silver: ## Exporta Silver: PostgreSQL → Parquet → s3://silver/smartfactory/
+	python ingestion/export_silver.py
+
+export-gold: ## Exporta Gold: features parquet + metadata Milvus → s3://gold/smartfactory/
+	python ingestion/export_gold.py
+
+medallion: ingest-all export-silver embed export-gold ## Pipeline Medallion completo: Bronze → Silver → Gold (MinIO + Milvus)
+
 # ── Modelagem ML ─────────────────────────────────────────────────────────────
 
 preprocess: ## Pré-processa dados Silver para ML (gera data/silver/processed_smartfactory.parquet)
@@ -89,13 +98,13 @@ test-retrieval: ## Testa busca vetorial no Milvus (uso: make test-retrieval QUER
 
 # ── RAG Core ─────────────────────────────────────────────────────────────────
 
-rag-query: ## Consulta o RAG (uso: make rag-query QUERY="máquina s_1 com alto downtime")
-	PYTHONPATH=. python rag/pipeline.py "$(QUERY)"
+rag-query: ## Consulta o RAG (uso: make rag-query QUERY="..." [FLAGS="--hybrid"])
+	PYTHONPATH=. python rag/pipeline.py "$(QUERY)" $(FLAGS)
 
 # ── API + Interface ───────────────────────────────────────────────────────────
 
 api: ## Sobe a FastAPI em localhost:8001
-	PYTHONPATH=. uvicorn api.main:app --host 0.0.0.0 --port 8001 --reload
+	PYTHONPATH=. python -m uvicorn api.main:app --host 0.0.0.0 --port 8001 --reload
 
 ui: ## Sobe a interface Gradio em localhost:7860
 	PYTHONPATH=. python interface/app.py

@@ -2,6 +2,7 @@
 
 import logging
 import os
+from datetime import datetime
 
 from dotenv import load_dotenv
 from fastembed import TextEmbedding
@@ -18,6 +19,15 @@ MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
 COLLECTION_NAME: str = "smartfactory_logs"
 
 EMBED_MODEL_NAME: str = "nomic-ai/nomic-embed-text-v1.5"
+
+# Dataset é amostrado a 10 Hz; uma tarefa de poucos segundos gera dezenas de
+# eventos quase idênticos. Sem dedup, top-5 vira 5 amostras do mesmo episódio.
+# Hits com mesma station + mesma current_task dentro desta janela colapsam,
+# mantendo o de maior score.
+DEDUP_WINDOW_SECONDS: int = 10
+# Quanto "a mais" buscar antes da dedup, para que a fatia final ainda
+# tenha top_k hits distintos depois do colapso.
+DEDUP_OVERFETCH_FACTOR: int = 4
 
 # Lazy singletons
 _collection: Collection | None = None
@@ -78,16 +88,16 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
         data=[embedding],
         anns_field="embedding",
         param={"metric_type": "COSINE", "params": {"nprobe": 16}},
-        limit=top_k,
+        limit=top_k * DEDUP_OVERFETCH_FACTOR,
         output_fields=[
             "event_id", "station", "event_timestamp",
             "current_state", "current_task", "current_sub_task", "log_text",
         ],
     )
 
-    hits: list[dict] = []
+    raw_hits: list[dict] = []
     for hit in results[0]:
-        hits.append({
+        raw_hits.append({
             "event_id":         hit.entity.get("event_id", ""),
             "station":          hit.entity.get("station", ""),
             "event_timestamp":  hit.entity.get("event_timestamp", ""),
@@ -98,7 +108,8 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
             "score":            float(hit.score),
         })
 
-    logger.info("Recuperados %d resultados.", len(hits))
+    hits = _deduplicate_hits(raw_hits, top_k)
+    logger.info("Recuperados %d resultados (de %d brutos pré-dedup).", len(hits), len(raw_hits))
     return hits
 
 
@@ -123,14 +134,71 @@ def _hit_to_dict(hit) -> dict:
     }
 
 
+_TS_FMT_US = "%Y-%m-%d %H:%M:%S.%f"
+_TS_FMT_NO_US = "%Y-%m-%d %H:%M:%S"
+
+
+def _parse_event_ts(ts: str) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        return datetime.strptime(ts, _TS_FMT_US)
+    except ValueError:
+        try:
+            return datetime.strptime(ts, _TS_FMT_NO_US)
+        except ValueError:
+            return None
+
+
+def _deduplicate_hits(hits: list[dict], top_k: int) -> list[dict]:
+    """Colapsa hits redundantes em uma janela DEDUP_WINDOW_SECONDS.
+
+    Critério de redundância: mesma station + mesma current_task +
+    event_timestamp dentro de DEDUP_WINDOW_SECONDS de algum hit já mantido
+    do mesmo grupo. Como hits chegam ordenados por score desc, a iteração
+    naturalmente preserva o representante de maior score por grupo.
+
+    Hits com timestamp não-parseável nunca colapsam (mantém comportamento
+    seguro em vez de descartar).
+    """
+    kept: list[tuple[dict, datetime | None]] = []
+    for h in hits:
+        h_ts = _parse_event_ts(h.get("event_timestamp", ""))
+        is_dup = False
+        for k_hit, k_ts in kept:
+            if (
+                k_hit.get("station") == h.get("station")
+                and k_hit.get("current_task", "") == h.get("current_task", "")
+                and h_ts is not None and k_ts is not None
+                and abs((k_ts - h_ts).total_seconds()) <= DEDUP_WINDOW_SECONDS
+            ):
+                is_dup = True
+                break
+        if not is_dup:
+            kept.append((h, h_ts))
+            if len(kept) >= top_k:
+                break
+    return [h for h, _ in kept]
+
+
 def _search_with_expr(
     collection: Collection, embedding: list[float], expr: str | None, top_k: int,
 ) -> list[dict]:
-    """Wrapper para collection.search com expr opcional."""
+    """Wrapper para collection.search com expr opcional.
+
+    Quando expr filtra um subconjunto pequeno (ex.: janela ±5s), os 83-90
+    candidatos podem estar espalhados por TODOS os clusters IVF (testado: às
+    vezes mesmo nprobe=64 ainda devolve 0). Com 139k vetores e nlist=128,
+    cada cluster tem ~1090 vetores; nprobe=128 é busca exaustiva sobre os
+    candidatos do expr — custo aceitável porque o expr já reduziu o universo
+    para ~100 entidades. Sem expr, mantém nprobe=16 (vector search puro
+    sobre 139k, custo importa).
+    """
+    nprobe = 128 if expr else 16
     kwargs = dict(
         data=[embedding],
         anns_field="embedding",
-        param={"metric_type": "COSINE", "params": {"nprobe": 16}},
+        param={"metric_type": "COSINE", "params": {"nprobe": nprobe}},
         limit=top_k,
         output_fields=_OUTPUT_FIELDS,
     )
@@ -182,18 +250,20 @@ def retrieve_hybrid(query: str, top_k: int = 5) -> list[dict]:
             f"Milvus indisponível em {MILVUS_HOST}:{MILVUS_PORT}."
         ) from exc
 
+    fetch_k = top_k * DEDUP_OVERFETCH_FACTOR
+
     if len(md.stations) == 1:
         station = md.stations[0]
         expr = _build_expr(station, md)
-        hits = _search_with_expr(collection, embedding, expr, top_k)
-        if not hits and md.window_lo:
+        raw_hits = _search_with_expr(collection, embedding, expr, fetch_k)
+        if not raw_hits and md.window_lo:
             logger.info("Janela temporal vazia — refazendo sem filtro de timestamp.")
-            hits = _search_with_expr(
-                collection, embedding, f"station == '{station}'", top_k,
+            raw_hits = _search_with_expr(
+                collection, embedding, f"station == '{station}'", fetch_k,
             )
-        return hits
+        return _deduplicate_hits(raw_hits, top_k)
 
-    per_station = max(2, top_k // len(md.stations) + 1)
+    per_station = max(2, top_k // len(md.stations) + 1) * DEDUP_OVERFETCH_FACTOR
     pooled: dict[str, dict] = {}
     for station in md.stations:
         expr = _build_expr(station, md)
@@ -208,4 +278,4 @@ def retrieve_hybrid(query: str, top_k: int = 5) -> list[dict]:
                 pooled[eid] = h
 
     merged = sorted(pooled.values(), key=lambda h: h["score"], reverse=True)
-    return merged[:top_k]
+    return _deduplicate_hits(merged, top_k)

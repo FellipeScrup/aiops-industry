@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from rag.pipeline import query as rag_query
+from rag.retriever import COLLECTION_NAME, EMBED_MODEL_NAME
 
 load_dotenv()
 
@@ -37,7 +38,7 @@ app.add_middleware(
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1)
     top_k: int = Field(default=5, ge=1, le=20)
-    model: str = Field(default="llama3.2:3b")
+    model: str = Field(default="qwen2.5:7b")
 
 
 class QueryResponse(BaseModel):
@@ -60,7 +61,9 @@ def query_endpoint(body: QueryRequest) -> QueryResponse:
     t0 = time.perf_counter()
 
     try:
-        result = rag_query(body.question, top_k=body.top_k, model=body.model)
+        result = rag_query(
+            body.question, top_k=body.top_k, model=body.model, use_hybrid=False,
+        )
     except ConnectionError as exc:
         logger.error("Serviço indisponível: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))
@@ -94,8 +97,8 @@ def metadata() -> dict:
     return {
         "model": os.getenv("LLM_MODEL", "llama3.2:3b"),
         "available_models": ["llama3.2:3b", "qwen2.5:3b", "gemini"],
-        "embed_model": "nomic-embed-text",
+        "embed_model": EMBED_MODEL_NAME,
         "vector_db": "milvus",
-        "collection": "piade_telemetry",
-        "datasets": ["PIADE sequences_1h_data"],
+        "collection": COLLECTION_NAME,
+        "datasets": ["Smart Factory Logs (14441997)"],
     }

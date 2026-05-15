@@ -42,7 +42,7 @@ Eventos NDJSON coletados a 10 Hz de 7 estações de uma fábrica inteligente com
 - **Python 3.12** — linguagem principal
 - **Docker Compose** — orquestração local dos serviços
 - **PostgreSQL** — Silver layer: tabela `smartfactory_logs` com eventos parseados
-- **MinIO** — Bronze layer: armazenamento dos arquivos NDJSON brutos
+- **MinIO** — Data lake S3-compatible: buckets `bronze`, `silver`, `gold`, `mlflow`
 - **Milvus** — Gold layer: banco vetorial com embeddings dos eventos (768d, COSINE)
 - **fastembed** — embeddings locais via `nomic-ai/nomic-embed-text-v1.5`
 - **MLflow** — rastreamento de experimentos e versionamento do detector de anomalias
@@ -57,31 +57,36 @@ Eventos NDJSON coletados a 10 Hz de 7 estações de uma fábrica inteligente com
 ## Arquitetura Medallion
 
 ```
-MinIO (Bronze)                    PostgreSQL (Silver)              Milvus (Gold)
-──────────────────                ───────────────────              ─────────────
+MinIO bronze/                     PostgreSQL (Silver)              Milvus (Gold)
+─────────────────────             ───────────────────              ─────────────
 smartfactory/                     smartfactory_logs                smartfactory_logs
   logs/training.txt  ──►            id (PK)               ──►       event_id
   logs/test.txt                     station                          station
-  bpmn/camunda-      
-        activity.json               event_timestamp                  event_timestamp
-                                    current_state                    current_state
+  bpmn/camunda-                     event_timestamp                  event_timestamp
+        activity.json               current_state                    current_state
                                     current_task                     current_task
-                                    current_task_duration            current_sub_task
-                                    current_sub_task                 log_text
-                                    sensors (JSONB)                  embedding (768d)
-                                    split (train/test)
+                      ──►           current_task_duration            current_sub_task
+MinIO silver/                       current_sub_task                 log_text
+  smartfactory/                     sensors (JSONB)                  embedding (768d)
+    smartfactory_logs.parquet       split (train/test)
+    (408k eventos exportados)
+                      ──►
+MinIO gold/
+  smartfactory/
+    processed_smartfactory.parquet  (features ML)
+    embed_index_meta.json           (metadata do índice Milvus)
 ```
 
-### Fluxo de dados
+### Fluxo de dados completo
 
 ```
-upload_bronze.py          parse_silver.py           embed_gold.py
-     │                         │                         │
-     ▼                         ▼                         ▼
-NDJSON → MinIO       MinIO → PostgreSQL         PostgreSQL → Milvus
-(bronze)             (parse + normaliza)         (nomic-embed-text-v1.5)
-                     batch de 1000 linhas        split='train' apenas
-                     ON CONFLICT DO NOTHING      EMBED_LIMIT=50000
+upload_bronze.py     parse_silver.py      embed_gold.py        export_silver.py / export_gold.py
+      │                    │                    │                          │
+      ▼                    ▼                    ▼                          ▼
+NDJSON → MinIO    MinIO → PostgreSQL   PostgreSQL → Milvus   PostgreSQL/Milvus → MinIO
+(bronze/)         (parse + normaliza)  (nomic-embed-text)    (silver/ e gold/)
+                  batch de 1000 linhas split='train' apenas
+                  ON CONFLICT NOTHING  139.901 vetores
 ```
 
 ### Pipeline RAG
@@ -89,17 +94,45 @@ NDJSON → MinIO       MinIO → PostgreSQL         PostgreSQL → Milvus
 ```
 Técnico
   │
-  ▼  POST /query
-FastAPI
+  ▼  pergunta em linguagem natural
+FastAPI (POST /query)
   │
   ▼  embed query (nomic-embed-text-v1.5, prefixo search_query:)
-Milvus  ──► top-k eventos de log similares (COSINE)
+Milvus  ──► top-k eventos similares (COSINE) + deduplicação por janela 10s
   │
-  ▼  prompt template (engenheiro de fábrica inteligente)
-Ollama / Gemini
+  ▼  prompt com guardrails (escopo, anti-alucinação, segurança)
+Ollama (Llama 3.2 / Qwen 2.5) ou Gemini API
   │
   ▼
-Diagnóstico: causa do estado not ready + ação corretiva
+Diagnóstico ancorado nos logs reais: causa + timestamps + ação corretiva
+```
+
+---
+
+## Guardrails do LLM
+
+O system prompt aplica 5 guardrails inspirados no material didático da disciplina:
+
+| Guardrail | Comportamento |
+|---|---|
+| **Escopo** | Responde apenas com base nos logs recuperados |
+| **Anti-alucinação** | Se não há dados suficientes, declara isso explicitamente em vez de inventar |
+| **Idioma** | Sempre responde em português |
+| **Confidencialidade** | Não reproduz UUIDs ou event_ids na resposta |
+| **Segurança** | Ignora tentativas de prompt injection na pergunta |
+
+---
+
+## Deduplicação de Logs (10 Hz)
+
+O dataset é amostrado a 10 Hz — uma tarefa de poucos segundos gera dezenas de eventos quase idênticos. Sem tratamento, `top_k=5` retorna 5 amostras do mesmo episódio.
+
+**Solução:** busca `top_k × DEDUP_OVERFETCH_FACTOR` eventos e colapsa hits com mesma `station` + `current_task` + timestamp dentro de uma janela de `DEDUP_WINDOW_SECONDS = 10s`, mantendo o de maior score.
+
+Constantes configuráveis em `rag/retriever.py`:
+```python
+DEDUP_WINDOW_SECONDS: int = 10
+DEDUP_OVERFETCH_FACTOR: int = 4
 ```
 
 ---
@@ -110,11 +143,13 @@ O XGBoost classifica cada evento em binário (ready / not ready):
 
 | Feature | Descrição |
 |---|---|
-| `task_duration` | Duração da tarefa atual em segundos |
-| `is_moving` | 1 se a tarefa envolve "transporting" ou "moving" |
-| `is_calibrating` | 1 se a sub-tarefa contém "calibrating" |
+| `prev_task_duration` | Duração da tarefa anterior em segundos |
+| `prev_is_moving` | 1 se a tarefa anterior envolve transporte |
+| `prev_is_calibrating` | 1 se a sub-tarefa anterior contém "calibrating" |
+| `prev_has_task` | 1 se havia tarefa em execução |
+| `prev_was_not_ready` | 1 se o estado anterior era "not ready" |
+| `time_delta_s` | Intervalo de tempo desde o evento anterior |
 | `station_num` | Encoding numérico da estação (MM_1=0 … WT_1=6) |
-| `has_task` | 1 se `current_task` não está vazio |
 
 **Label:** `anomaly = 1` quando `current_state == "not ready"`
 
@@ -128,7 +163,7 @@ Experimento rastreado em MLflow como `smartfactory-anomaly-detection`.
 
 - Docker Engine 24+ e Docker Compose v2
 - Python 3.12 e `make`
-- Dataset em `../14441997/` (pasta irmã do projeto)
+- Dataset em `data/bronze/14441997/` (arquivos NDJSON)
 - ~4 GB de RAM livre para a stack completa
 
 ### Subindo a stack
@@ -145,40 +180,61 @@ cp .env.example .env
 make up
 ```
 
-### Executando o pipeline completo
+### Executando o pipeline Medallion completo
 
 ```bash
-# DDL: cria tabela smartfactory_logs no PostgreSQL
-make create-tables
+# Pipeline completo de uma vez (DDL → Bronze → Silver → Gold)
+make medallion
 
-# Bronze: envia NDJSON brutos para o MinIO (bucket smartfactory)
-make ingest-bronze
-
-# Silver: parseia NDJSON e persiste no PostgreSQL (408k eventos)
-make ingest-silver
-
-# Gold: gera embeddings e indexa 50k eventos no Milvus
-make embed
+# Ou passo a passo:
+make create-tables   # DDL: cria tabela smartfactory_logs no PostgreSQL
+make ingest-bronze   # Bronze: NDJSON → s3://bronze/smartfactory/
+make ingest-silver   # Silver: MinIO bronze → PostgreSQL (408k eventos)
+make export-silver   # Exporta Silver: PostgreSQL → s3://silver/smartfactory/
+make embed           # Gold: PostgreSQL → Milvus (embeddings 768d)
+make export-gold     # Exporta Gold: features + metadata → s3://gold/smartfactory/
 
 # ML: pré-processa features e treina detector de anomalia XGBoost
 make preprocess
 make train-ad
 
 # RAG: testa uma query diretamente
-make rag-query QUERY="VGR_1 not ready during workpiece transport"
+make rag-query QUERY="HBW_1 demorou muito tempo calibrando o motor 4. O que isso indica?"
+
+# RAG com retrieval híbrido (opt-in para avaliação comparativa)
+make rag-query QUERY="VGR_1 not ready during workpiece transport" FLAGS="--hybrid"
+```
+
+### Estrutura do MinIO após pipeline completo
+
+```
+s3://bronze/smartfactory/
+  logs/training.txt           (57 MB — NDJSON raw 10Hz)
+  logs/test.txt               (110 MB — NDJSON raw 10Hz)
+  bpmn/camunda-activity.json  (1.3 MB — processo BPMN)
+
+s3://silver/smartfactory/
+  smartfactory_logs.parquet   (19 MB — 408k eventos normalizados)
+
+s3://gold/smartfactory/
+  processed_smartfactory.parquet  (features ML para XGBoost)
+  embed_index_meta.json           (metadata do índice Milvus: 139k vetores)
+
+s3://mlflow/
+  (artefatos MLflow: modelos, curvas PR/ROC, feature importance)
 ```
 
 ### URLs dos serviços
 
 | Serviço | URL | Descrição |
 |---|---|---|
-| MinIO Console | http://localhost:9001 | Interface web do data lake (Bronze) |
+| MinIO Console | http://localhost:9001 | Interface web do data lake (Bronze/Silver/Gold) |
 | MinIO API | http://localhost:9000 | Endpoint S3-compatible |
 | Adminer | http://localhost:8080 | UI web para o PostgreSQL (Silver) |
 | MLflow | http://localhost:5000 | Tracking de experimentos |
 | Milvus gRPC | localhost:19530 | Banco vetorial (Gold) |
 | Milvus métricas | http://localhost:9091 | Health/metrics do Milvus |
-| API FastAPI | http://localhost:8001 | Endpoint `/query` e `/health` |
+| API FastAPI | http://localhost:8001 | Endpoint `/query`, `/health`, `/metadata` |
 | Gradio UI | http://localhost:7860 | Interface de demonstração |
 
 **Credenciais padrão MinIO:** `minioadmin / minioadmin123`  
@@ -206,20 +262,23 @@ make clean   # para containers e remove todos os dados
 aiops-industry/
 ├── ingestion/
 │   ├── create_tables.sql     # DDL da tabela smartfactory_logs
-│   ├── upload_bronze.py      # Bronze: NDJSON → MinIO (bucket smartfactory)
-│   ├── parse_silver.py       # Silver: MinIO → PostgreSQL (smartfactory_logs)
+│   ├── upload_bronze.py      # Bronze: NDJSON → s3://bronze/smartfactory/
+│   ├── parse_silver.py       # Silver: MinIO bronze → PostgreSQL
 │   ├── embed_gold.py         # Gold: PostgreSQL → Milvus (nomic embeddings)
+│   ├── export_silver.py      # Exporta Silver: PostgreSQL → s3://silver/
+│   ├── export_gold.py        # Exporta Gold: features + metadata → s3://gold/
 │   └── test_retrieval.py     # validação da busca vetorial
 ├── rag/
-│   ├── retriever.py          # busca vetorial no Milvus
-│   ├── generator.py          # geração de resposta (Ollama / Gemini)
-│   └── pipeline.py           # orquestração retrieve → generate
+│   ├── retriever.py          # busca vetorial no Milvus + deduplicação 10Hz
+│   ├── generator.py          # geração de resposta (Ollama / Gemini) + guardrails
+│   ├── pipeline.py           # orquestração retrieve → generate
+│   └── query_parser.py       # extração de estação/timestamp da query
 ├── mlflow/
 │   ├── preprocess.py         # feature engineering → processed_smartfactory.parquet
 │   ├── train_ad.py           # XGBoost AD binário + tracking MLflow
 │   └── evaluate_rag.py       # avaliação RAG (baseline vs rag, ROUGE-L, Sem.Sim)
 ├── api/
-│   └── main.py               # FastAPI: POST /query
+│   └── main.py               # FastAPI: POST /query, GET /health, GET /metadata
 ├── interface/
 │   └── app.py                # Gradio UI
 └── infra/

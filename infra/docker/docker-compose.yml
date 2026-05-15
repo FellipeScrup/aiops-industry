@@ -48,7 +48,11 @@ services:
         mc mb --ignore-existing local/silver
         mc mb --ignore-existing local/gold
         mc mb --ignore-existing local/mlflow
-        echo "Buckets criados com sucesso."
+        echo "Estrutura Medallion pronta:"
+        echo "  s3://bronze/   — dados brutos (NDJSON, BPMN)"
+        echo "  s3://silver/   — dados normalizados (Parquet)"
+        echo "  s3://gold/     — features ML + metadata Milvus"
+        echo "  s3://mlflow/   — artefatos MLflow"
 
   # ── Silver ─────────────────────────────────────────────────────────────────
   # PostgreSQL: dados relacionais, logs normalizados, metadados, alarm_dictionary

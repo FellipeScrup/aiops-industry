@@ -1,12 +1,25 @@
-"""Silver → Gold: embedding pipeline for Smart Factory log events.
+"""Gold → Vector store: embeds smart factory EPISODES into Milvus.
 
-Reads event logs from PostgreSQL (smartfactory_logs, split='train'), generates
-768-dim embeddings via fastembed (nomic-embed-text-v1.5), and indexes them
-in Milvus. Supports checkpoint-based resumption.
+Reads aggregated episodes from PostgreSQL (smartfactory_episodes, produced by
+parse_episodes.py), generates 768-dim embeddings via fastembed
+(nomic-embed-text-v1.5) over the human-readable episode text, and indexes them
+in the Milvus collection `smartfactory_episodes`.
+
+Why episodes and not raw events: a query like "why did the station stop?" must
+retrieve a meaningful not-ready episode with a duration and a cause, not a
+single 100 ms snapshot of an idle station. See parse_episodes.py.
+
+Indexing policy: ALL not-ready episodes (which includes every duration anomaly)
+are indexed; ready/idle episodes are only sampled (READY_SAMPLE) so the store
+is not flooded with "everything is fine" vectors.
+
+Each embedded text is enriched with BPM activity context (next station / process)
+so the generator can reason about production-line impact.
 """
 
 import logging
 import os
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -22,6 +35,9 @@ from pymilvus import (
 )
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from ingestion.bpm_context import format_bpm_context  # noqa: E402
 
 load_dotenv()
 
@@ -41,16 +57,17 @@ POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
 
 MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
-COLLECTION_NAME: str = "smartfactory_logs"
+COLLECTION_NAME: str = "smartfactory_episodes"
 
 EMBED_MODEL_NAME: str = "nomic-ai/nomic-embed-text-v1.5"
 EMBED_DIM: int = 768
 
-EMBED_LIMIT: int = int(os.getenv("EMBED_LIMIT", "50000"))
+# Number of ready/idle episodes to keep (all not-ready are always indexed).
+# Default 0: this is a fault-diagnosis assistant, and idle episodes hijack
+# ambiguous queries like "why did the station stop?" (semantically near "idle").
+# Set READY_SAMPLE>0 to add idle context for non-diagnostic questions.
+READY_SAMPLE: int = int(os.getenv("READY_SAMPLE", "0"))
 EMBED_BATCH: int = 256
-MILVUS_BATCH: int = 500
-LOG_EVERY: int = 1000
-CHECKPOINT_PATH: Path = Path("ingestion/.embed_checkpoint")
 
 
 # ── Fastembed ─────────────────────────────────────────────────────────────────
@@ -69,8 +86,7 @@ def _get_embed_model() -> TextEmbedding:
 
 def _embed_batch(texts: list[str]) -> list[list[float]]:
     model = _get_embed_model()
-    embeddings = list(model.embed(texts))
-    return [e.tolist() for e in embeddings]
+    return [e.tolist() for e in model.embed(texts)]
 
 
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
@@ -83,33 +99,34 @@ def _build_engine() -> Engine:
     return create_engine(url)
 
 
-def _load_logs(engine: Engine) -> pd.DataFrame:
-    logger.info("Carregando eventos de treino do PostgreSQL (smartfactory_logs)...")
+def _load_episodes(engine: Engine) -> pd.DataFrame:
+    logger.info("Carregando episódios do PostgreSQL (smartfactory_episodes)...")
     query = text("""
-        SELECT
-            id,
-            station,
-            event_timestamp,
-            current_state,
-            current_task,
-            current_task_duration,
-            current_sub_task
-        FROM smartfactory_logs
-        WHERE split = 'train'
-        ORDER BY event_timestamp
+        SELECT episode_id, station, current_state, current_task, current_sub_task,
+               start_ts, end_ts, duration_s, is_anomaly, text
+        FROM smartfactory_episodes
+        ORDER BY start_ts
     """)
     df = pd.read_sql(query, engine)
-    logger.info("  %d eventos carregados.", len(df))
+    logger.info("  %d episódios carregados.", len(df))
     return df
 
 
-def _sample(df: pd.DataFrame, total: int) -> pd.DataFrame:
-    if len(df) <= total:
-        logger.info("Dataset completo (%d eventos) será indexado.", len(df))
-        return df.reset_index(drop=True)
-    sampled = df.sample(n=total, random_state=42).reset_index(drop=True)
-    logger.info("Amostra aleatória: %d/%d eventos.", len(sampled), len(df))
-    return sampled
+def _select_episodes(df: pd.DataFrame) -> pd.DataFrame:
+    """All not-ready episodes + a small sample of ready/idle episodes."""
+    not_ready = df[df["current_state"] == "not ready"]
+    ready = df[df["current_state"] == "ready"]
+    if len(ready) > READY_SAMPLE:
+        ready = ready.sample(n=READY_SAMPLE, random_state=42)
+    selected = pd.concat([not_ready, ready]).reset_index(drop=True)
+    logger.info(
+        "Selecionados %d episódios para indexar (not ready=%d, anomalias=%d, ready amostrados=%d).",
+        len(selected),
+        len(not_ready),
+        int(df["is_anomaly"].sum()),
+        len(ready),
+    )
+    return selected
 
 
 # ── Milvus ────────────────────────────────────────────────────────────────────
@@ -119,186 +136,103 @@ def _connect_milvus() -> None:
     logger.info("Conectado ao Milvus em %s:%s", MILVUS_HOST, MILVUS_PORT)
 
 
-def _ensure_collection() -> Collection:
+def _recreate_collection() -> Collection:
     if utility.has_collection(COLLECTION_NAME):
-        logger.info("Collection '%s' já existe. Pulando criação.", COLLECTION_NAME)
-        return Collection(COLLECTION_NAME)
+        logger.info("Collection '%s' já existe — dropando para reconstruir.", COLLECTION_NAME)
+        utility.drop_collection(COLLECTION_NAME)
 
     fields = [
-        FieldSchema(name="event_id",         dtype=DataType.VARCHAR, max_length=36,   is_primary=True),
+        FieldSchema(name="event_id",         dtype=DataType.VARCHAR, max_length=64, is_primary=True),
         FieldSchema(name="station",          dtype=DataType.VARCHAR, max_length=20),
         FieldSchema(name="event_timestamp",  dtype=DataType.VARCHAR, max_length=30),
+        FieldSchema(name="end_ts",           dtype=DataType.VARCHAR, max_length=30),
         FieldSchema(name="current_state",    dtype=DataType.VARCHAR, max_length=20),
         FieldSchema(name="current_task",     dtype=DataType.VARCHAR, max_length=500),
         FieldSchema(name="current_sub_task", dtype=DataType.VARCHAR, max_length=300),
-        FieldSchema(name="log_text",         dtype=DataType.VARCHAR, max_length=1000),
+        FieldSchema(name="duration_s",       dtype=DataType.FLOAT),
+        FieldSchema(name="is_anomaly",       dtype=DataType.BOOL),
+        FieldSchema(name="log_text",         dtype=DataType.VARCHAR, max_length=2000),
         FieldSchema(name="embedding",        dtype=DataType.FLOAT_VECTOR, dim=EMBED_DIM),
     ]
-    schema = CollectionSchema(fields=fields, description="Smart Factory log event embeddings")
+    schema = CollectionSchema(fields=fields, description="Smart Factory episode embeddings")
     col = Collection(name=COLLECTION_NAME, schema=schema)
     logger.info("Collection '%s' criada.", COLLECTION_NAME)
     return col
 
 
-def _flush_batch(collection: Collection, buf: dict[str, list]) -> None:
-    data = [
-        buf["event_id"],
-        buf["station"],
-        buf["event_timestamp"],
-        buf["current_state"],
-        buf["current_task"],
-        buf["current_sub_task"],
-        buf["log_text"],
-        buf["embedding"],
-    ]
-    collection.insert(data)
-    collection.flush()
-
-
 def _build_index_and_load(collection: Collection) -> None:
-    if collection.indexes:
-        logger.info("Index já existe. Pulando criação.")
-    else:
-        logger.info("Criando index IVF_FLAT (COSINE, nlist=128)...")
-        collection.create_index(
-            field_name="embedding",
-            index_params={
-                "metric_type": "COSINE",
-                "index_type": "IVF_FLAT",
-                "params": {"nlist": 128},
-            },
-        )
-        logger.info("Index criado.")
-    collection.load()
-    logger.info(
-        "Collection carregada. Total de vetores: %d",
-        collection.num_entities,
+    logger.info("Criando index IVF_FLAT (COSINE, nlist=128)...")
+    collection.create_index(
+        field_name="embedding",
+        index_params={
+            "metric_type": "COSINE",
+            "index_type": "IVF_FLAT",
+            "params": {"nlist": 128},
+        },
     )
+    collection.load()
+    logger.info("Collection carregada. Total de vetores: %d", collection.num_entities)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _build_log_text(row: pd.Series) -> str:
-    task = row["current_task"] or "idle"
-    subtask = row["current_sub_task"] or ""
-    duration = float(row["current_task_duration"] or 0.0)
-    state = row["current_state"]
-    return (
-        f"search_document: "
-        f"Station {row['station']} | "
-        f"{str(row['event_timestamp'])[:19]} | "
-        f"State: {state} | "
-        f"Task: {task} | "
-        f"Sub-task: {subtask} | "
-        f"Duration: {duration:.3f}s"
-    )
-
-
-# ── Checkpoint ────────────────────────────────────────────────────────────────
-
-def _read_checkpoint() -> int:
-    if CHECKPOINT_PATH.exists():
-        try:
-            offset = int(CHECKPOINT_PATH.read_text().strip())
-            logger.info("Checkpoint encontrado: %d linhas já processadas.", offset)
-            return offset
-        except ValueError:
-            logger.warning("Checkpoint corrompido. Reiniciando do zero.")
-    return 0
-
-
-def _write_checkpoint(offset: int) -> None:
-    CHECKPOINT_PATH.write_text(str(offset))
+def _build_embed_text(row: pd.Series) -> str:
+    """Episode text + BPM context, prefixed for nomic document embedding."""
+    bpm = format_bpm_context(str(row["station"]), str(row["current_task"] or ""))
+    base = f"search_document: {row['text']}"
+    return f"{base} | {bpm}" if bpm else base
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
 
-def _run_pipeline(df: pd.DataFrame, collection: Collection) -> None:
-    offset = _read_checkpoint()
-    total = len(df)
+def _run(df: pd.DataFrame, collection: Collection) -> None:
+    buf: dict[str, list] = {f.name: [] for f in collection.schema.fields}
+    total = 0
 
-    logger.info(
-        "Milvus: %d vetores existentes. Checkpoint: %d/%d eventos processados.",
-        collection.num_entities,
-        offset,
-        total,
-    )
-
-    if offset >= total:
-        logger.info("Nada a processar — todos os %d eventos já foram inseridos.", total)
-        return
-
-    remaining = df.iloc[offset:].reset_index(drop=True)
-    milvus_buf: dict[str, list] = {
-        "event_id": [], "station": [], "event_timestamp": [],
-        "current_state": [], "current_task": [], "current_sub_task": [],
-        "log_text": [], "embedding": [],
-    }
-    total_inserted = offset
-
-    for batch_start in range(0, len(remaining), EMBED_BATCH):
-        batch = remaining.iloc[batch_start : batch_start + EMBED_BATCH]
-
-        texts = [_build_log_text(row) for _, row in batch.iterrows()]
+    for start in range(0, len(df), EMBED_BATCH):
+        batch = df.iloc[start : start + EMBED_BATCH]
+        texts = [_build_embed_text(row) for _, row in batch.iterrows()]
         embeddings = _embed_batch(texts)
 
         for i, (_, row) in enumerate(batch.iterrows()):
-            milvus_buf["event_id"].append(str(row["id"])[:36])
-            milvus_buf["station"].append(str(row["station"])[:20])
-            milvus_buf["event_timestamp"].append(str(row["event_timestamp"])[:30])
-            milvus_buf["current_state"].append(str(row["current_state"])[:20])
-            milvus_buf["current_task"].append(str(row["current_task"] or "")[:500])
-            milvus_buf["current_sub_task"].append(str(row["current_sub_task"] or "")[:300])
-            milvus_buf["log_text"].append(texts[i][:1000])
-            milvus_buf["embedding"].append(embeddings[i])
+            buf["event_id"].append(str(row["episode_id"])[:64])
+            buf["station"].append(str(row["station"])[:20])
+            buf["event_timestamp"].append(str(row["start_ts"])[:30])
+            buf["end_ts"].append(str(row["end_ts"])[:30])
+            buf["current_state"].append(str(row["current_state"])[:20])
+            buf["current_task"].append(str(row["current_task"] or "")[:500])
+            buf["current_sub_task"].append(str(row["current_sub_task"] or "")[:300])
+            buf["duration_s"].append(float(row["duration_s"]))
+            buf["is_anomaly"].append(bool(row["is_anomaly"]))
+            buf["log_text"].append(str(row["text"])[:2000])
+            buf["embedding"].append(embeddings[i])
 
-        abs_pos = offset + batch_start + len(batch)
+        total += len(batch)
+        logger.info("Embeddados %d/%d episódios.", total, len(df))
 
-        if len(milvus_buf["embedding"]) >= MILVUS_BATCH:
-            _flush_batch(collection, milvus_buf)
-            total_inserted += len(milvus_buf["embedding"])
-            _write_checkpoint(abs_pos)
-            logger.info(
-                "Inseridos %d vetores no Milvus (total: %d / %d)",
-                len(milvus_buf["embedding"]),
-                total_inserted,
-                total,
-            )
-            for k in milvus_buf:
-                milvus_buf[k].clear()
-
-        if abs_pos % LOG_EVERY == 0 or abs_pos == total:
-            pct = 100.0 * abs_pos / total
-            logger.info("Processados: %d/%d (%.1f%%)", abs_pos, total, pct)
-
-    if milvus_buf["embedding"]:
-        _flush_batch(collection, milvus_buf)
-        total_inserted += len(milvus_buf["embedding"])
-        _write_checkpoint(total)
-        logger.info(
-            "Inseridos %d vetores no Milvus (total: %d)",
-            len(milvus_buf["embedding"]),
-            total_inserted,
-        )
+    data = [buf[f.name] for f in collection.schema.fields]
+    collection.insert(data)
+    collection.flush()
+    logger.info("Inseridos %d vetores no Milvus.", total)
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 def main() -> None:
     _connect_milvus()
-    collection = _ensure_collection()
+    collection = _recreate_collection()
 
     engine = _build_engine()
-    df = _load_logs(engine)
-    sample_df = _sample(df, EMBED_LIMIT)
+    df = _load_episodes(engine)
+    if df.empty:
+        logger.warning("Tabela smartfactory_episodes vazia. Rode `make ingest-episodes` antes.")
+        return
 
-    _run_pipeline(sample_df, collection)
+    selected = _select_episodes(df)
+    _run(selected, collection)
     _build_index_and_load(collection)
 
-    logger.info(
-        "Pipeline concluído. Vetores indexados: %d",
-        collection.num_entities,
-    )
+    logger.info("Pipeline concluído. Vetores indexados: %d", collection.num_entities)
 
 
 if __name__ == "__main__":

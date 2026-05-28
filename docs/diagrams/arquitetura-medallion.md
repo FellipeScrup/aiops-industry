@@ -2,50 +2,46 @@
 
 ## Visão Geral
 
-A plataforma segue o padrão **Lakehouse + Medallion** (Armbrust et al., 2021) com três camadas de qualidade progressiva de dados, alimentadas exclusivamente pelo dataset **PIADE sequences_1h_data**.
+A plataforma segue o padrão **Lakehouse + Medallion** (Armbrust et al., 2021) com
+três camadas de qualidade progressiva de dados, alimentadas pelo dataset
+**Smart Factory Logs (14441997)** — eventos NDJSON a 10 Hz de 7 estações.
 
 ## Camadas Medallion
 
 ### Bronze — MinIO (Data Lake)
 - Dados brutos sem transformação
-- Arquivo: `piade/sequences_1h_data.csv`
-- Janelas de 1 hora por equipamento com percentuais de tempo de operação, contagens de alarme e mudanças de estado
+- Arquivos: `smartfactory/logs/{training,test}.txt` (NDJSON 10 Hz) e
+  `smartfactory/bpmn/camunda-activity.json`
+- Upload por `ingestion/upload_bronze.py`
 
 ### Silver — PostgreSQL (Banco Relacional)
-- Dados normalizados e persistidos por `parse_silver.py`
-- Tabela única: `piade_telemetry`
-  - `equipment_id`, `interval_start` (chave composta única)
-  - `count_sum`, `num_changes`
-  - `pct_idle`, `pct_production`, `pct_downtime`, `pct_perf_loss`, `pct_sched_downtime`
+- Eventos normalizados e persistidos por `ingestion/parse_silver.py`
+- Tabela: `smartfactory_logs` (~408k linhas)
+  - `id` (PK), `station`, `event_timestamp`, `current_state`
+  - `current_task`, `current_task_duration`, `current_sub_task`
+  - `sensors` (JSONB), `split` (train/test)
 
-### Gold — Milvus (Banco Vetorial)
-- Embeddings de 768 dimensões via `nomic-ai/nomic-embed-text-v1.5` (fastembed)
-- Collection: `piade_telemetry`
-- Campos armazenados: `machine_id`, `interval_start`, `pct_idle`, `pct_downtime`, `pct_perf_loss`, `count_sum`, `log_text`
-- Busca por similaridade de cosseno (IVF_FLAT, nlist=128, nprobe=16)
-- Texto de embedding: descrição narrativa da janela de 1h (downtime%, idle%, perf_loss%, alarmes, mudanças de estado)
+### Gold — Episódios (PostgreSQL + Milvus)
+- `ingestion/parse_episodes.py` agrega os eventos 10 Hz em **episódios** —
+  sequências contínuas de mesma `station` + `task` + `sub_task` + `state` — na
+  tabela `smartfactory_episodes` (485 episódios no treino).
+  - Cada episódio: `start_ts`, `end_ts`, `duration_s`, `sensors_changed`,
+    `is_anomaly`, `text` (narrativa em PT).
+  - Anomalia de duração por sub-tarefa: `duração > mediana + 3·MAD` e excesso ≥ 2s.
+- `ingestion/embed_gold.py` embeda a narrativa dos episódios `not ready` na
+  collection Milvus `smartfactory_episodes` (768d, `nomic-embed-text-v1.5`,
+  IVF_FLAT, COSINE, nlist=128).
 
 ## Fluxo RAG
 
-1. Técnico insere descrição do comportamento da máquina na interface Gradio ou via `POST /query`
+1. Técnico insere a descrição do comportamento da estação na interface Gradio ou via `POST /query`
 2. FastAPI repassa para o pipeline RAG
-3. Retriever embeda a query com prefixo `search_query:` e busca as top-k janelas mais similares no Milvus
-4. Generator monta o prompt com o contexto de telemetria e envia ao LLM (Ollama local ou Gemini API)
-5. O LLM atua como engenheiro de confiabilidade: diagnostica o comportamento, aponta causa provável e recomenda ação corretiva
-
-## Classificador ML (XGBoost + MLflow)
-
-- Features: `pct_idle`, `pct_production`, `pct_downtime`, `pct_perf_loss`, `pct_sched_downtime`, `count_sum`, `num_changes`
-- Target: nível de degradação derivado de thresholds de telemetria
-  - `normal` (0): downtime ≤ 5% e perf_loss ≤ 10%
-  - `degraded` (1): downtime > 5% ou perf_loss > 10%
-  - `critical` (2): downtime > 15% ou perf_loss > 20%
-- Experimento: `piade-degradation-classification`
-- Modelo salvo localmente em `mlflow/models/xgboost_severity.json`
+3. Retriever embeda a query com prefixo `search_query:` e busca os top-k episódios mais similares no Milvus (+ deduplicação 10 Hz)
+4. Generator monta o prompt com o contexto dos episódios (duração, sensores, anomalia, contexto BPM) e envia ao LLM (Ollama local ou Gemini API)
+5. O LLM atua como engenheiro de manutenção: diagnostica o comportamento, aponta causa provável e recomenda ação corretiva
 
 ## Infraestrutura
 
-- Tudo containerizado via `docker compose up`
-- Tracking de experimentos: MLflow (backend PostgreSQL, artefatos MinIO)
+- Tudo containerizado via `docker compose up` (MinIO, PostgreSQL, Adminer, etcd, Milvus, Ollama)
 - LLMs locais via Ollama (Llama 3.2:3b, Qwen 2.5)
 - LLM remoto opcional via Gemini API (`model=gemini`)

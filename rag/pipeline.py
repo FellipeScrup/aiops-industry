@@ -39,13 +39,14 @@ def query(
                 user_input, model, use_hybrid)
     retriever_fn = retrieve_hybrid if use_hybrid else retrieve
     context = retriever_fn(user_input, top_k=top_k)
-    answer = generate(user_input, context, model=model)
+    answer, token_usage = generate(user_input, context, model=model)
     return {
         "question": user_input,
         "context": context,
         "answer": answer,
         "retrieval_scores": [hit["score"] for hit in context],
         "model_used": model,
+        "token_usage": token_usage,
     }
 
 
@@ -84,4 +85,10 @@ if __name__ == "__main__":
 
     print("\nRESPOSTA DO ASSISTENTE:")
     print(result["answer"])
+
+    usage = result.get("token_usage", {})
+    print("\nTOKENS UTILIZADOS:")
+    print(f"  Prompt:     {usage.get('prompt_tokens', 0):>6}")
+    print(f"  Resposta:   {usage.get('completion_tokens', 0):>6}")
+    print(f"  Total:      {usage.get('total_tokens', 0):>6}")
     print("=" * 60 + "\n")

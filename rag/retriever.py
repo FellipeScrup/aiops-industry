@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 MILVUS_HOST: str = os.getenv("MILVUS_HOST", "localhost")
 MILVUS_PORT: str = os.getenv("MILVUS_PORT", "19530")
-COLLECTION_NAME: str = "smartfactory_logs"
+COLLECTION_NAME: str = "smartfactory_episodes"
 
 EMBED_MODEL_NAME: str = "nomic-ai/nomic-embed-text-v1.5"
 
@@ -89,24 +89,10 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
         anns_field="embedding",
         param={"metric_type": "COSINE", "params": {"nprobe": 16}},
         limit=top_k * DEDUP_OVERFETCH_FACTOR,
-        output_fields=[
-            "event_id", "station", "event_timestamp",
-            "current_state", "current_task", "current_sub_task", "log_text",
-        ],
+        output_fields=_OUTPUT_FIELDS,
     )
 
-    raw_hits: list[dict] = []
-    for hit in results[0]:
-        raw_hits.append({
-            "event_id":         hit.entity.get("event_id", ""),
-            "station":          hit.entity.get("station", ""),
-            "event_timestamp":  hit.entity.get("event_timestamp", ""),
-            "current_state":    hit.entity.get("current_state", ""),
-            "current_task":     hit.entity.get("current_task", ""),
-            "current_sub_task": hit.entity.get("current_sub_task", ""),
-            "log_text":         hit.entity.get("log_text", ""),
-            "score":            float(hit.score),
-        })
+    raw_hits = [_hit_to_dict(hit) for hit in results[0]]
 
     hits = _deduplicate_hits(raw_hits, top_k)
     logger.info("Recuperados %d resultados (de %d brutos pré-dedup).", len(hits), len(raw_hits))
@@ -116,20 +102,30 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
 # ── Hybrid retrieval (filtro escalar + multi-query) ──────────────────────────
 
 _OUTPUT_FIELDS = [
-    "event_id", "station", "event_timestamp",
-    "current_state", "current_task", "current_sub_task", "log_text",
+    "event_id", "station", "event_timestamp", "end_ts",
+    "current_state", "current_task", "current_sub_task",
+    "duration_s", "is_anomaly", "log_text",
 ]
+
+
+def _field(hit, key, default=""):
+    """pymilvus 2.4.x Hit.get() takes only the field name (no default)."""
+    value = hit.entity.get(key)
+    return default if value is None else value
 
 
 def _hit_to_dict(hit) -> dict:
     return {
-        "event_id":         hit.entity.get("event_id", ""),
-        "station":          hit.entity.get("station", ""),
-        "event_timestamp":  hit.entity.get("event_timestamp", ""),
-        "current_state":    hit.entity.get("current_state", ""),
-        "current_task":     hit.entity.get("current_task", ""),
-        "current_sub_task": hit.entity.get("current_sub_task", ""),
-        "log_text":         hit.entity.get("log_text", ""),
+        "event_id":         _field(hit, "event_id"),
+        "station":          _field(hit, "station"),
+        "event_timestamp":  _field(hit, "event_timestamp"),
+        "end_ts":           _field(hit, "end_ts"),
+        "current_state":    _field(hit, "current_state"),
+        "current_task":     _field(hit, "current_task"),
+        "current_sub_task": _field(hit, "current_sub_task"),
+        "duration_s":       float(_field(hit, "duration_s", 0.0)),
+        "is_anomaly":       bool(_field(hit, "is_anomaly", False)),
+        "log_text":         _field(hit, "log_text"),
         "score":            float(hit.score),
     }
 
@@ -186,13 +182,11 @@ def _search_with_expr(
 ) -> list[dict]:
     """Wrapper para collection.search com expr opcional.
 
-    Quando expr filtra um subconjunto pequeno (ex.: janela ±5s), os 83-90
-    candidatos podem estar espalhados por TODOS os clusters IVF (testado: às
-    vezes mesmo nprobe=64 ainda devolve 0). Com 139k vetores e nlist=128,
-    cada cluster tem ~1090 vetores; nprobe=128 é busca exaustiva sobre os
-    candidatos do expr — custo aceitável porque o expr já reduziu o universo
-    para ~100 entidades. Sem expr, mantém nprobe=16 (vector search puro
-    sobre 139k, custo importa).
+    Quando expr filtra um subconjunto pequeno (ex.: janela ±5s), os candidatos
+    podem estar espalhados por vários clusters IVF (testado: às vezes mesmo
+    nprobe=64 ainda devolve 0). Com a collection de episódios (algumas centenas
+    de vetores) e nlist=128, nprobe=128 é busca exaustiva — custo trivial e
+    elimina o risco de falso-zero do filtro escalar. Sem expr, mantém nprobe=16.
     """
     nprobe = 128 if expr else 16
     kwargs = dict(

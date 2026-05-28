@@ -4,9 +4,7 @@ COMPOSE := docker compose -f infra/docker/docker-compose.yml --env-file .env
 
 .PHONY: help up down logs ps restart clean status \
         create-tables ingest-bronze ingest-silver ingest-all \
-        export-silver export-gold medallion \
-        preprocess train-ad eval-rag eval-rag-gen \
-        golden-set validate-golden \
+        ingest-episodes export-silver medallion \
         embed test-retrieval \
         rag-query \
         api ui serve
@@ -59,39 +57,18 @@ ingest-silver: ## Processa Bronze → Silver (normaliza e persiste no PostgreSQL
 
 ingest-all: create-tables ingest-bronze ingest-silver ## Pipeline completo: DDL → Bronze (MinIO) → Silver (PostgreSQL)
 
+ingest-episodes: ## Silver → Gold: agrega eventos 10Hz em episódios (tabela smartfactory_episodes)
+	python ingestion/parse_episodes.py
+
 export-silver: ## Exporta Silver: PostgreSQL → Parquet → s3://silver/smartfactory/
 	python ingestion/export_silver.py
 
-export-gold: ## Exporta Gold: features parquet + metadata Milvus → s3://gold/smartfactory/
-	python ingestion/export_gold.py
-
-medallion: ingest-all export-silver embed export-gold ## Pipeline Medallion completo: Bronze → Silver → Gold (MinIO + Milvus)
-
-# ── Modelagem ML ─────────────────────────────────────────────────────────────
-
-preprocess: ## Pré-processa dados Silver para ML (gera data/silver/processed_smartfactory.parquet)
-	python -m pip install -q -r mlflow/requirements.txt && python mlflow/preprocess.py
-
-train-ad: ## Treina XGBoost AD binário e registra métricas do paper (AP, ROC AUC, fit/predict time)
-	MLFLOW_S3_ENDPOINT_URL=http://localhost:9000 python mlflow/train_ad.py
-
-eval-rag: ## Avalia RAG (baseline vs rag) e loga no MLflow (uso: make eval-rag)
-	python -m pip install -q -r mlflow/requirements.txt && \
-	python mlflow/evaluate_rag.py
-
-eval-rag-gen: ## Só (re)gera o golden set legado (top-25 anomalias), sem avaliar
-	python mlflow/evaluate_rag.py --force-gen --skip-eval
-
-golden-set: ## Gera golden set tiered (factual + cross_station + causal) — Passo 0
-	python mlflow/evaluate_rag.py --tiered --force-gen --skip-eval
-
-validate-golden: ## Valida schema, distribuição e evidências do golden_set.json
-	python mlflow/validate_golden_set.py
+medallion: ingest-all ingest-episodes export-silver embed ## Pipeline Medallion completo: Bronze → Silver → Gold (MinIO + Milvus)
 
 # ── Embeddings Gold ──────────────────────────────────────────────────────────
 
-embed: ## Gera embeddings e indexa no Milvus (Gold layer)
-	EMBED_LIMIT=50000 python ingestion/embed_gold.py
+embed: ## Embeds episódios (smartfactory_episodes) e indexa no Milvus (sempre reconstrói a collection)
+	python ingestion/embed_gold.py
 
 test-retrieval: ## Testa busca vetorial no Milvus (uso: make test-retrieval QUERY="falha motor")
 	python ingestion/test_retrieval.py "$(QUERY)"

@@ -51,9 +51,6 @@ Thumbs.db
 # Jupyter
 .ipynb_checkpoints/
 
-# MLflow local
-mlruns/
-
 # Testes / coverage
 .pytest_cache/
 .coverage

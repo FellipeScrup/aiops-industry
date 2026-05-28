@@ -122,7 +122,8 @@ Tudo que **não** está em `_KNOWN_FIELDS` é serializado e armazenado em
 - **EC_1**: temperatura ambiente, umidade relativa, luminosidade.
 
 Como o conjunto exato muda por estação, manter em JSONB evita schema
-explosion. Para análises ML específicas, extraia colunas em `mlflow/preprocess.py`.
+explosion. Os sensores que mudam durante um episódio são extraídos em
+`ingestion/parse_episodes.py` (campo `sensors_changed`).
 
 ### 3c. Coluna de controle de split
 
@@ -142,21 +143,16 @@ fica reservado para o conjunto de avaliação fora-de-amostra.
 ## 4. Semântica de `current_state` e detecção de anomalia
 
 `current_state` é binário: `"ready"` (operação nominal) ou `"not ready"`
-(estação ocupada ou em falha). A heurística usada para identificar
-**anomalias** no projeto é:
+(estação ocupada ou em falha). A detecção de **anomalia** é feita no nível de
+**episódio** (`ingestion/parse_episodes.py`), não de evento isolado:
 
-> Um evento é considerado anômalo quando `current_state = 'not ready'`
-> **e** `current_task_duration` é estatisticamente alto para a sub-task
-> em questão (sub-task demora muito → algo travou).
+> Um episódio `not ready` é anômalo quando sua **duração** excede
+> `mediana + 3·MAD` da sua sub-tarefa **e** ultrapassa a mediana em pelo
+> menos 2s (piso absoluto, evita falsos alarmes onde MAD ≈ 0).
 
-Esta é a base do extractor `extract_log_scenarios`
-(`mlflow/evaluate_rag.py:128-163`), que pega os **top-N eventos
-`not_ready` ordenados por duração** como cenários para gerar perguntas
-no golden set.
-
-O modelo XGBoost de detecção de anomalia (`mlflow/train_ad.py`) usa o
-binário `not_ready = 1` como label e features derivadas de
-`current_task_duration`, `is_moving`, `is_calibrating`, etc.
+A estatística (mediana e MAD) é calculada por `current_sub_task`, porque a
+duração normal varia muito entre sub-tarefas. Episódios anômalos recebem
+`is_anomaly = True` na tabela `smartfactory_episodes`.
 
 ---
 
@@ -249,8 +245,7 @@ Camunda que orquestra a fábrica. Joins potenciais:
   diferenciar contexto de indexação vs busca.
 - **Silver / Gold** — Convenção Medallion (Databricks): Bronze = raw,
   Silver = limpo/normalizado, Gold = pronto para consumo
-  analítico/ML.
-- **Tier (no golden set)** — Categoria de complexidade da pergunta:
-  `factual` (single-hop), `cross_station` (correlação temporal entre
-  estações distintas), `causal` (diagnóstico de causa raiz a partir de
-  sub_task anterior). Definido em `mlflow/evaluate_rag.py`.
+  analítico/RAG (aqui, os episódios).
+- **Episódio** — Sequência contínua de eventos com mesma `station`,
+  `current_task`, `current_sub_task` e `current_state`. Unidade da camada
+  Gold; ver `ingestion/parse_episodes.py`.

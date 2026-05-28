@@ -3,7 +3,7 @@ name: aiops-industry
 services:
 
   # ── Bronze ─────────────────────────────────────────────────────────────────
-  # MinIO: data lake S3-compatible (buckets bronze / silver / gold / mlflow)
+  # MinIO: data lake S3-compatible (buckets bronze / silver / gold)
   minio:
     image: minio/minio:latest
     container_name: aiops-minio
@@ -47,15 +47,13 @@ services:
         mc mb --ignore-existing local/bronze
         mc mb --ignore-existing local/silver
         mc mb --ignore-existing local/gold
-        mc mb --ignore-existing local/mlflow
         echo "Estrutura Medallion pronta:"
         echo "  s3://bronze/   — dados brutos (NDJSON, BPMN)"
         echo "  s3://silver/   — dados normalizados (Parquet)"
         echo "  s3://gold/     — features ML + metadata Milvus"
-        echo "  s3://mlflow/   — artefatos MLflow"
 
   # ── Silver ─────────────────────────────────────────────────────────────────
-  # PostgreSQL: dados relacionais, logs normalizados, metadados, alarm_dictionary
+  # PostgreSQL: dados relacionais, logs normalizados
   postgres:
     image: postgres:16
     container_name: aiops-postgres
@@ -66,7 +64,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../scripts/init-postgres.sh:/docker-entrypoint-initdb.d/init-postgres.sh:ro
     ports:
       - "5432:5432"
     networks:
@@ -138,6 +135,25 @@ services:
       retries: 3
       start_period: 15s
 
+  # ── LLM ───────────────────────────────────────────────────────────────────
+  # Ollama: inferência local de LLMs (geração das respostas do RAG)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aiops-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - aiops-net
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   # Milvus Standalone: banco vetorial (embeddings 768d via nomic-embed-text)
   milvus:
     image: milvusdb/milvus:v2.4.15
@@ -166,43 +182,6 @@ services:
       retries: 3
       start_period: 90s
 
-  # ── MLflow ──────────────────────────────────────────────────────────────────
-  # Tracking server: PostgreSQL como backend store, MinIO como artifact store
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
-    container_name: aiops-mlflow
-    restart: unless-stopped
-    environment:
-      MLFLOW_BACKEND_STORE_URI: ${MLFLOW_BACKEND_URI}
-      MLFLOW_DEFAULT_ARTIFACT_ROOT: ${MLFLOW_ARTIFACT_ROOT}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
-    ports:
-      - "5000:5000"
-    networks:
-      - aiops-net
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    command:
-      - bash
-      - -c
-      - |
-        pip install boto3 psycopg2-binary --quiet
-        mlflow server \
-          --backend-store-uri $$MLFLOW_BACKEND_STORE_URI \
-          --default-artifact-root $$MLFLOW_DEFAULT_ARTIFACT_ROOT \
-          --host 0.0.0.0 \
-          --port 5000
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
 volumes:
   postgres_data:
@@ -210,6 +189,7 @@ volumes:
   milvus_etcd:
   milvus_minio:
   milvus_data:
+  ollama_data:
 
 networks:
   aiops-net:

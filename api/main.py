@@ -48,6 +48,7 @@ class QueryResponse(BaseModel):
     retrieval_scores: list[float]
     processing_time_s: float
     model_used: str
+    token_usage: dict
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -84,6 +85,7 @@ def query_endpoint(body: QueryRequest) -> QueryResponse:
         retrieval_scores=result["retrieval_scores"],
         processing_time_s=elapsed,
         model_used=result["model_used"],
+        token_usage=result.get("token_usage", {}),
     )
 
 
@@ -95,8 +97,8 @@ def health() -> dict:
 @app.get("/metadata")
 def metadata() -> dict:
     return {
-        "model": os.getenv("LLM_MODEL", "llama3.2:3b"),
-        "available_models": ["llama3.2:3b", "qwen2.5:3b", "gemini"],
+        "model": os.getenv("LLM_MODEL", "qwen2.5:7b"),
+        "available_models": ["qwen2.5:7b", "llama3.2:3b", "gemini"],
         "embed_model": EMBED_MODEL_NAME,
         "vector_db": "milvus",
         "collection": COLLECTION_NAME,

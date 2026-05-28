@@ -41,12 +41,10 @@ Eventos NDJSON coletados a 10 Hz de 7 estações de uma fábrica inteligente com
 
 - **Python 3.12** — linguagem principal
 - **Docker Compose** — orquestração local dos serviços
-- **PostgreSQL** — Silver layer: tabela `smartfactory_logs` com eventos parseados
-- **MinIO** — Data lake S3-compatible: buckets `bronze`, `silver`, `gold`, `mlflow`
-- **Milvus** — Gold layer: banco vetorial com embeddings dos eventos (768d, COSINE)
+- **PostgreSQL** — Silver layer: tabela `smartfactory_logs` (eventos) + Gold `smartfactory_episodes` (episódios)
+- **MinIO** — Data lake S3-compatible: buckets `bronze`, `silver`, `gold`
+- **Milvus** — Vector store: banco vetorial com embeddings dos episódios (768d, COSINE)
 - **fastembed** — embeddings locais via `nomic-ai/nomic-embed-text-v1.5`
-- **MLflow** — rastreamento de experimentos e versionamento do detector de anomalias
-- **XGBoost** — classificador binário de anomalia (AD)
 - **Ollama** — inferência local de LLMs (Llama 3.2, Qwen 2.5)
 - **Gemini API** — backend LLM alternativo via `GEMINI_API_KEY`
 - **FastAPI** — API REST
@@ -57,36 +55,36 @@ Eventos NDJSON coletados a 10 Hz de 7 estações de uma fábrica inteligente com
 ## Arquitetura Medallion
 
 ```
-MinIO bronze/                     PostgreSQL (Silver)              Milvus (Gold)
-─────────────────────             ───────────────────              ─────────────
-smartfactory/                     smartfactory_logs                smartfactory_logs
-  logs/training.txt  ──►            id (PK)               ──►       event_id
-  logs/test.txt                     station                          station
-  bpmn/camunda-                     event_timestamp                  event_timestamp
-        activity.json               current_state                    current_state
-                                    current_task                     current_task
-                      ──►           current_task_duration            current_sub_task
-MinIO silver/                       current_sub_task                 log_text
-  smartfactory/                     sensors (JSONB)                  embedding (768d)
-    smartfactory_logs.parquet       split (train/test)
-    (408k eventos exportados)
-                      ──►
-MinIO gold/
-  smartfactory/
-    processed_smartfactory.parquet  (features ML)
-    embed_index_meta.json           (metadata do índice Milvus)
+MinIO bronze/             PostgreSQL Silver          Gold (Postgres + Milvus)
+─────────────────         ──────────────────         ────────────────────────
+smartfactory/             smartfactory_logs          smartfactory_episodes
+  logs/training.txt ─►      id (PK)          ─agrega─►  episode_id (PK)
+  logs/test.txt             station                     station
+  bpmn/camunda-             event_timestamp             start_ts / end_ts
+        activity.json       current_state               duration_s
+                  ─►        current_task                is_anomaly
+MinIO silver/               current_task_duration       sensors_changed
+  smartfactory/             current_sub_task            text (narrativa PT)
+    smartfactory_logs       sensors (JSONB)                  │
+      .parquet (408k)       split (train/test)               ▼ embed (nomic 768d)
+                                                       Milvus smartfactory_episodes
+                                                         (episódios not ready)
 ```
+
+A camada Gold agrega os eventos brutos de 10 Hz em **episódios** com início,
+fim, duração e detecção de anomalia por sub-tarefa (`ingestion/parse_episodes.py`),
+e só então os embeda no Milvus (`ingestion/embed_gold.py`). Ver
+[Camada de Episódios](#camada-de-episódios-silver--gold).
 
 ### Fluxo de dados completo
 
 ```
-upload_bronze.py     parse_silver.py      embed_gold.py        export_silver.py / export_gold.py
-      │                    │                    │                          │
-      ▼                    ▼                    ▼                          ▼
-NDJSON → MinIO    MinIO → PostgreSQL   PostgreSQL → Milvus   PostgreSQL/Milvus → MinIO
-(bronze/)         (parse + normaliza)  (nomic-embed-text)    (silver/ e gold/)
-                  batch de 1000 linhas split='train' apenas
-                  ON CONFLICT NOTHING  139.901 vetores
+upload_bronze.py   parse_silver.py     parse_episodes.py    embed_gold.py      export_silver.py
+      │                  │                    │                   │                    │
+      ▼                  ▼                    ▼                   ▼                    ▼
+NDJSON → MinIO    MinIO → Postgres    Postgres → Postgres   Postgres → Milvus   Postgres → MinIO
+(bronze/)         (smartfactory_logs) (smartfactory_         (episódios →        (silver/)
+                  408k eventos         episodes, 485 epi.)   nomic 768d)
 ```
 
 ### Pipeline RAG
@@ -98,7 +96,7 @@ Técnico
 FastAPI (POST /query)
   │
   ▼  embed query (nomic-embed-text-v1.5, prefixo search_query:)
-Milvus  ──► top-k eventos similares (COSINE) + deduplicação por janela 10s
+Milvus  ──► top-k episódios similares (COSINE) + deduplicação por janela 10s
   │
   ▼  prompt com guardrails (escopo, anti-alucinação, segurança)
 Ollama (Llama 3.2 / Qwen 2.5) ou Gemini API
@@ -137,23 +135,31 @@ DEDUP_OVERFETCH_FACTOR: int = 4
 
 ---
 
-## Detector de Anomalia (MLflow)
+## Camada de Episódios (Silver → Gold)
 
-O XGBoost classifica cada evento em binário (ready / not ready):
+Os eventos são amostrados a 10 Hz: uma ação de poucos segundos vira dezenas de
+linhas quase idênticas. `ingestion/parse_episodes.py` agrega essas linhas em
+**episódios** — a unidade que carrega significado para diagnóstico.
 
-| Feature | Descrição |
-|---|---|
-| `prev_task_duration` | Duração da tarefa anterior em segundos |
-| `prev_is_moving` | 1 se a tarefa anterior envolve transporte |
-| `prev_is_calibrating` | 1 se a sub-tarefa anterior contém "calibrating" |
-| `prev_has_task` | 1 se havia tarefa em execução |
-| `prev_was_not_ready` | 1 se o estado anterior era "not ready" |
-| `time_delta_s` | Intervalo de tempo desde o evento anterior |
-| `station_num` | Encoding numérico da estação (MM_1=0 … WT_1=6) |
+Regra de quebra: um novo episódio começa quando muda `station`, `current_task`,
+`current_sub_task` ou `current_state` (linhas lidas em ordem de station +
+timestamp). Para cada episódio calcula-se início, fim, **duração** (delta de
+timestamps), os sensores que mudaram, e uma narrativa em português embedada no
+Milvus.
 
-**Label:** `anomaly = 1` quando `current_state == "not ready"`
+**Detecção de anomalia de duração** (por sub-tarefa, sobre episódios `not ready`):
 
-Experimento rastreado em MLflow como `smartfactory-anomaly-detection`.
+```
+duração > mediana + 3·MAD   E   (duração − mediana) ≥ 2s
+```
+
+O piso absoluto de 2s evita falsos alarmes em sub-tarefas muito consistentes
+(onde MAD ≈ 0). Episódios anômalos recebem `is_anomaly = True`.
+
+No log de treino: **139.901 eventos → 485 episódios** (415 `not ready`, 7
+anomalias). Só os episódios `not ready` são indexados por padrão
+(`READY_SAMPLE=0`), porque episódios ociosos sequestram perguntas como
+"por que a estação parou?".
 
 ---
 
@@ -187,16 +193,12 @@ make up
 make medallion
 
 # Ou passo a passo:
-make create-tables   # DDL: cria tabela smartfactory_logs no PostgreSQL
-make ingest-bronze   # Bronze: NDJSON → s3://bronze/smartfactory/
-make ingest-silver   # Silver: MinIO bronze → PostgreSQL (408k eventos)
-make export-silver   # Exporta Silver: PostgreSQL → s3://silver/smartfactory/
-make embed           # Gold: PostgreSQL → Milvus (embeddings 768d)
-make export-gold     # Exporta Gold: features + metadata → s3://gold/smartfactory/
-
-# ML: pré-processa features e treina detector de anomalia XGBoost
-make preprocess
-make train-ad
+make create-tables    # DDL: cria tabela smartfactory_logs no PostgreSQL
+make ingest-bronze    # Bronze: NDJSON → s3://bronze/smartfactory/
+make ingest-silver    # Silver: MinIO bronze → PostgreSQL (408k eventos)
+make ingest-episodes  # Gold: agrega eventos → tabela smartfactory_episodes (485 epi.)
+make export-silver    # Exporta Silver: PostgreSQL → s3://silver/smartfactory/
+make embed            # Gold: episódios → Milvus (embeddings 768d)
 
 # RAG: testa uma query diretamente
 make rag-query QUERY="HBW_1 demorou muito tempo calibrando o motor 4. O que isso indica?"
@@ -215,14 +217,11 @@ s3://bronze/smartfactory/
 
 s3://silver/smartfactory/
   smartfactory_logs.parquet   (19 MB — 408k eventos normalizados)
-
-s3://gold/smartfactory/
-  processed_smartfactory.parquet  (features ML para XGBoost)
-  embed_index_meta.json           (metadata do índice Milvus: 139k vetores)
-
-s3://mlflow/
-  (artefatos MLflow: modelos, curvas PR/ROC, feature importance)
 ```
+
+A camada **Gold** (episódios) vive no PostgreSQL (`smartfactory_episodes`) e no
+Milvus (coleção `smartfactory_episodes`, embeddings 768d) — não há artefato
+exportado no MinIO `gold/`.
 
 ### URLs dos serviços
 
@@ -230,10 +229,10 @@ s3://mlflow/
 |---|---|---|
 | MinIO Console | http://localhost:9001 | Interface web do data lake (Bronze/Silver/Gold) |
 | MinIO API | http://localhost:9000 | Endpoint S3-compatible |
-| Adminer | http://localhost:8080 | UI web para o PostgreSQL (Silver) |
-| MLflow | http://localhost:5000 | Tracking de experimentos |
-| Milvus gRPC | localhost:19530 | Banco vetorial (Gold) |
+| Adminer | http://localhost:8080 | UI web para o PostgreSQL (Silver/Gold) |
+| Milvus gRPC | localhost:19530 | Banco vetorial (episódios) |
 | Milvus métricas | http://localhost:9091 | Health/metrics do Milvus |
+| Ollama | http://localhost:11434 | Inferência local de LLMs (geração) |
 | API FastAPI | http://localhost:8001 | Endpoint `/query`, `/health`, `/metadata` |
 | Gradio UI | http://localhost:7860 | Interface de demonstração |
 
@@ -264,19 +263,16 @@ aiops-industry/
 │   ├── create_tables.sql     # DDL da tabela smartfactory_logs
 │   ├── upload_bronze.py      # Bronze: NDJSON → s3://bronze/smartfactory/
 │   ├── parse_silver.py       # Silver: MinIO bronze → PostgreSQL
-│   ├── embed_gold.py         # Gold: PostgreSQL → Milvus (nomic embeddings)
+│   ├── parse_episodes.py     # Gold: agrega eventos → smartfactory_episodes + anomalia
+│   ├── bpm_context.py        # enriquecimento BPM (atividade/processo/próxima estação)
+│   ├── embed_gold.py         # Gold: episódios → Milvus (nomic embeddings)
 │   ├── export_silver.py      # Exporta Silver: PostgreSQL → s3://silver/
-│   ├── export_gold.py        # Exporta Gold: features + metadata → s3://gold/
 │   └── test_retrieval.py     # validação da busca vetorial
 ├── rag/
 │   ├── retriever.py          # busca vetorial no Milvus + deduplicação 10Hz
 │   ├── generator.py          # geração de resposta (Ollama / Gemini) + guardrails
 │   ├── pipeline.py           # orquestração retrieve → generate
 │   └── query_parser.py       # extração de estação/timestamp da query
-├── mlflow/
-│   ├── preprocess.py         # feature engineering → processed_smartfactory.parquet
-│   ├── train_ad.py           # XGBoost AD binário + tracking MLflow
-│   └── evaluate_rag.py       # avaliação RAG (baseline vs rag, ROUGE-L, Sem.Sim)
 ├── api/
 │   └── main.py               # FastAPI: POST /query, GET /health, GET /metadata
 ├── interface/

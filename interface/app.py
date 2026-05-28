@@ -6,13 +6,13 @@ import gradio as gr
 API_URL = "http://localhost:8001/query"
 
 _EXAMPLES = [
-    ["VGR_1 not ready during workpiece transport", 5, "llama3.2:3b"],
-    ["HBW_1 calibration taking too long", 5, "llama3.2:3b"],
-    ["workpiece transport from oven to milling machine", 5, "llama3.2:3b"],
-    ["station not ready during pickup", 5, "llama3.2:3b"],
+    ["VGR_1 not ready during workpiece transport", 5, "qwen2.5:7b"],
+    ["HBW_1 calibrating motor 4 for a long time, what does it indicate?", 5, "qwen2.5:7b"],
+    ["OV_1 not ready during heating, what happened before?", 5, "qwen2.5:7b"],
+    ["What was SM_1 doing while VGR_1 was transporting a workpiece?", 5, "qwen2.5:7b"],
 ]
 
-_MODEL_CHOICES = ["llama3.2:3b", "qwen2.5:3b", "gemini"]
+_MODEL_CHOICES = ["qwen2.5:7b", "llama3.2:3b", "gemini"]
 
 
 def analyze(question: str, top_k: int, model: str) -> tuple[str, str, str]:
@@ -44,18 +44,29 @@ def analyze(question: str, top_k: int, model: str) -> tuple[str, str, str]:
     for rank, hit in enumerate(data.get("context", []), start=1):
         task = hit.get("current_task") or "idle"
         sub = hit.get("current_sub_task") or ""
-        sub_part = f" | Sub-task: {sub}" if sub else ""
+        sub_part = f" | Sub-tarefa: {sub}" if sub else ""
+        duration = hit.get("duration_s")
+        dur_part = f" | {duration:.1f}s" if duration is not None else ""
+        anomaly_part = "  [ANOMALIA]" if hit.get("is_anomaly") else ""
         context_lines.append(
-            f"Rank {rank} (score: {hit['score']:.4f}): "
-            f"Estação {hit.get('station', '?')} | {hit.get('event_timestamp', '?')} "
-            f"| State: {hit.get('current_state', '?')} | Task: {task}{sub_part}"
+            f"Rank {rank} (score: {hit['score']:.4f}){anomaly_part}: "
+            f"Estação {hit.get('station', '?')} | {hit.get('event_timestamp', '?')}{dur_part} "
+            f"| Estado: {hit.get('current_state', '?')} | Tarefa: {task}{sub_part}"
         )
     context_str = "\n".join(context_lines)
 
     scores = data.get("retrieval_scores", [])
     scores_str = "  ".join(f"#{i + 1}: {s:.4f}" for i, s in enumerate(scores))
     elapsed = data.get("processing_time_s", 0)
+    usage = data.get("token_usage", {})
     scores_str += f"\n\nModelo usado: {model_used} | Tempo: {elapsed:.1f}s"
+    if usage:
+        scores_str += (
+            f"\n\nTokens utilizados:"
+            f"\n  Prompt:    {usage.get('prompt_tokens', 0)}"
+            f"\n  Resposta:  {usage.get('completion_tokens', 0)}"
+            f"\n  Total:     {usage.get('total_tokens', 0)}"
+        )
 
     return answer, context_str, scores_str
 
@@ -73,7 +84,7 @@ with gr.Blocks(title="AIOps Industry — Análise de Telemetria Industrial") as 
             )
             with gr.Row():
                 top_k_slider = gr.Slider(
-                    label="Número de janelas similares (top_k)",
+                    label="Número de episódios similares (top_k)",
                     minimum=1,
                     maximum=10,
                     value=5,
@@ -81,14 +92,14 @@ with gr.Blocks(title="AIOps Industry — Análise de Telemetria Industrial") as 
                 )
                 model_dropdown = gr.Dropdown(
                     choices=_MODEL_CHOICES,
-                    value="llama3.2:3b",
+                    value="qwen2.5:7b",
                     label="Modelo LLM",
                 )
             analyze_btn = gr.Button("Analisar", variant="primary")
 
         with gr.Column():
             answer_output = gr.Textbox(label="Diagnóstico do Assistente", lines=10)
-            context_output = gr.Textbox(label="Logs Recuperados", lines=6)
+            context_output = gr.Textbox(label="Episódios Recuperados", lines=6)
             scores_output = gr.Textbox(label="Scores / Modelo / Tempo", lines=3)
 
     analyze_btn.click(

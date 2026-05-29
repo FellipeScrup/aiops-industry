@@ -6,10 +6,10 @@ import gradio as gr
 API_URL = "http://localhost:8001/query"
 
 _EXAMPLES = [
-    ["VGR_1 not ready during workpiece transport", 5, "qwen2.5:7b"],
-    ["HBW_1 calibrating motor 4 for a long time, what does it indicate?", 5, "qwen2.5:7b"],
-    ["OV_1 not ready during heating, what happened before?", 5, "qwen2.5:7b"],
-    ["What was SM_1 doing while VGR_1 was transporting a workpiece?", 5, "qwen2.5:7b"],
+    ["Por que a estação VGR_1 ficou parada?", 5, "qwen2.5:7b"],
+    ["HBW_1 demorou muito calibrando o motor, o que isso indica?", 5, "qwen2.5:7b"],
+    ["O que aconteceu na estação OV_1 durante o aquecimento?", 5, "qwen2.5:7b"],
+    ["A estação SM_1 ficou not ready, por quê?", 5, "qwen2.5:7b"],
 ]
 
 _MODEL_CHOICES = ["qwen2.5:7b", "llama3.2:3b", "gemini"]
@@ -79,7 +79,7 @@ with gr.Blocks(title="AIOps Industry — Análise de Telemetria Industrial") as 
         with gr.Column():
             question_input = gr.Textbox(
                 label="Descreva o comportamento da estação:",
-                placeholder="Ex: VGR_1 not ready during workpiece transport, ou: HBW_1 calibration taking too long",
+                placeholder="Ex: Por que a estação VGR_1 ficou parada? ou: HBW_1 demorou muito calibrando o motor",
                 lines=3,
             )
             with gr.Row():

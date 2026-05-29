@@ -17,16 +17,20 @@ Em vez de reagir a códigos de alarme isolados, o sistema raciocina sobre o **es
 
 ## Dataset
 
-**Smart Factory Logs — 14441997**
+**Smart Factory Logs — Zenodo 10.5281/zenodo.14441997** (Seiger, 2024)
 
-Eventos NDJSON coletados a 10 Hz de 7 estações de uma fábrica inteligente com automação industrial (processos BPMN Camunda):
+Sensores reais de uma fábrica de pequena escala (Indústria 4.0), coletados a 10 Hz de 7 estações, com os processos (armazenagem e produção) orquestrados por BPMN 2.0 / Camunda. Originalmente proposto para detecção de atividades de processo (García-Bañuelos et al., 2025, *Procedia Computer Science* 257, 856–863) e aqui reaproveitado para diagnóstico de falhas via RAG.
+
+Estações: VGR (robô de transporte), HBW (armazém vertical), OV (forno), MM (fresa), SM (separadora por cor), WT (esteira), EC (ambiente + câmera).
+
+Campos de cada evento NDJSON:
 
 | Campo | Descrição |
 |---|---|
 | `id` | UUID do evento |
 | `station` | Estação geradora: MM_1, EC_1, SM_1, HBW_1, OV_1, VGR_1, WT_1 |
 | `timestamp` | Timestamp UTC do evento (precisão 100ms) |
-| `current_state` | `"ready"` \| `"not ready"` — label de anomalia |
+| `current_state` | `"ready"` (disponível/ociosa) \| `"not ready"` (executando/ocupada) |
 | `current_task` | Descrição da tarefa em execução |
 | `current_task_duration` | Duração da tarefa atual em segundos |
 | `current_sub_task` | Sub-tarefa corrente |

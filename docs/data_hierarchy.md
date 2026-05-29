@@ -6,6 +6,16 @@ Quem ler este doc deve conseguir, sem outras referências, escrever uma
 query SQL razoável em `smartfactory_logs` e entender o que cada vetor
 do Milvus representa.
 
+**Fonte do dataset:** Seiger, R. (2024). *Dataset from a smart factory to
+evaluate a semi-automated approach to detecting process-level activities from
+sensor data.* Zenodo, doi:10.5281/zenodo.**14441997**. Paper associado:
+García-Bañuelos, L. et al. (2025), *A semi-automated approach to detecting
+process-level activities from sensor data*, Procedia Computer Science 257,
+856–863. O dataset traz **sensores reais** de uma fábrica de pequena escala
+(Indústria 4.0), com os processos orquestrados por **BPMN 2.0 / Camunda**;
+foi originalmente proposto para *detecção de atividades de processo*, e aqui
+é reaproveitado para diagnóstico de falhas via RAG.
+
 ---
 
 ## 1. Lineage Bronze → Silver → Gold
@@ -28,8 +38,9 @@ flowchart LR
         S1[("smartfactory_logs<br/>~408k linhas")]
     end
 
-    subgraph GOLD["Gold · Milvus (768d, COSINE)"]
-        G1[("smartfactory_logs<br/>até 50k vetores")]
+    subgraph GOLD["Gold · episódios (Postgres + Milvus 768d, COSINE)"]
+        GP[("smartfactory_episodes<br/>485 episódios")]
+        G1[("Milvus<br/>415 not ready")]
     end
 
     T1 --> B1
@@ -37,36 +48,43 @@ flowchart LR
     C1 --> B3
     B1 -- "ingestion/parse_silver.py" --> S1
     B2 -- "ingestion/parse_silver.py" --> S1
-    S1 -- "ingestion/embed_gold.py<br/>(split='train')" --> G1
+    S1 -- "ingestion/parse_episodes.py<br/>(split='train')" --> GP
+    GP -- "ingestion/embed_gold.py" --> G1
 ```
 
 | Camada | Tecnologia | Path / target | Script | Make target |
 |---|---|---|---|---|
 | Bronze | MinIO (S3-compat) | `s3://smartfactory/logs/{training,test}.txt` | `ingestion/upload_bronze.py` | `make ingest-bronze` |
 | Silver | PostgreSQL 16 | tabela `smartfactory_logs` | `ingestion/parse_silver.py` | `make ingest-silver` |
-| Gold | Milvus 2.x | collection `smartfactory_logs` | `ingestion/embed_gold.py` | `make embed` |
+| Gold (episódios) | PostgreSQL 16 | tabela `smartfactory_episodes` | `ingestion/parse_episodes.py` | `make ingest-episodes` |
+| Gold (vetores) | Milvus 2.4 | collection `smartfactory_episodes` | `ingestion/embed_gold.py` | `make embed` |
 
-Pipeline completo (DDL + Bronze + Silver) é orquestrado por `make ingest-all`
-(`Makefile:58`). A camada Gold roda separada porque depende do `fastembed`
-(modelo ~400MB de download na primeira execução).
+Pipeline completo (DDL + Bronze + Silver) é orquestrado por `make ingest-all`.
+As camadas Gold (episódios + embed) rodam depois; o embed depende do
+`fastembed` (modelo ~400MB de download na primeira execução).
 
 ---
 
 ## 2. As 7 estações da fábrica inteligente
 
-A planta simulada do dataset 14441997 (Smart Factory Logs) tem **7 estações**
-de produção que cooperam no fluxo de uma peça (workpiece). Os códigos
-abaixo aparecem literalmente no campo `station` de cada evento de log:
+A fábrica de pequena escala (small-scale smart factory) do dataset
+14441997 tem **7 estações** que cooperam no fluxo de uma peça (workpiece),
+da matéria-prima ao produto final. Os códigos abaixo aparecem literalmente
+no campo `station` de cada evento de log (nomes conforme García-Bañuelos
+et al., 2025):
 
 | `station` | Nome | Papel no processo |
 |---|---|---|
-| `VGR_1` | Vacuum Gripper Robot | Captura a peça do depósito (HBW) e entrega na primeira estação de processamento. |
-| `HBW_1` | High Bay Warehouse | Armazenamento vertical das peças cruas. Sai/entra pela ação do VGR. |
-| `MM_1` | Multi-Processing Station | Conjunto forno + serra. Processa a peça (aquece, corta). |
-| `OV_1` | Oven | Forno componente do MM. Tem eventos próprios porque controla temperatura. |
-| `SM_1` | Sorting Machine | Esteira de separação por cor. Despacha a peça para destino correto. |
-| `EC_1` | Environment Sensor | Telemetria ambiente (temperatura/luz/umidade). Não move peças. |
-| `WT_1` | Workpiece Transport | Esteira de transporte entre estações. |
+| `VGR_1` | Vacuum Gripper Robot | Robô central de transporte: move a peça entre as estações. |
+| `HBW_1` | High-bay Warehouse | Armazém vertical (3×3 contêineres) das peças. |
+| `OV_1` | Oven | Forno: aquece a peça. |
+| `MM_1` | Milling Machine | Fresa: usina a peça. |
+| `SM_1` | Sorting Machine | Separadora por cor (3 saídas/sinks). |
+| `EC_1` | Environment & Camera | Sensores de ambiente + câmera (detecção de cor). |
+| `WT_1` | Workstation Transport | Esteira de transporte entre estações. |
+
+A peça também entra e sai pela **DPS** (Delivery & Pickup Station), que não
+emite eventos próprios no log das 7 estações.
 
 Frequência de amostragem: **10 Hz** (um evento a cada ~100 ms por estação,
 quando a estação está ativa). Por isso o volume bruto chega em centenas de
@@ -156,42 +174,43 @@ duração normal varia muito entre sub-tarefas. Episódios anômalos recebem
 
 ---
 
-## 5. Silver → Gold: o que vai para o Milvus
+## 5. Gold → Milvus: o que vira vetor
 
-`ingestion/embed_gold.py` lê apenas eventos `split='train'`
-(`embed_gold.py:86-103`) e gera embeddings 768d com
-**`nomic-ai/nomic-embed-text-v1.5`** (via `fastembed`).
+`ingestion/embed_gold.py` lê os **episódios** da tabela
+`smartfactory_episodes` (não mais eventos) e gera embeddings 768d com
+**`nomic-ai/nomic-embed-text-v1.5`** (via `fastembed`). Por padrão indexa
+**apenas os episódios `not ready`** (`READY_SAMPLE=0`), pois episódios
+ociosos sequestram perguntas de diagnóstico.
 
-O texto que vira vetor é montado em `_build_log_text`
-(`embed_gold.py:181-194`):
+O texto que vira vetor é a narrativa em português do episódio, prefixada
+para o nomic e enriquecida com contexto BPM:
 
 ```
-search_document: Station MM_1 | 2023-04-11 09:57:48 | State: not ready
-                | Task: Process workpiece | Sub-task: Heating
-                | Duration: 12.430s
+search_document: Estação VGR_1 ficou not ready por 11.7s executando
+'moving towards the high_bay_warehouse_holding_position', sub-tarefa '...'.
+Duração dentro do normal (mediana 11.6s). Sensores que mudaram:
+current_pos_x, m1_speed, ... | BPM: ... | Process: ... | Next: ...
 ```
 
 Prefixo `search_document:` é convenção do nomic para distinguir
 documentos indexados de queries de busca. O retriever
-(`rag/retriever.py`) usa o prefixo simétrico `search_query:` na hora de
-embeddar a pergunta.
+(`rag/retriever.py`) usa o prefixo simétrico `search_query:` na pergunta.
 
-Schema Milvus (`embed_gold.py:127-138`):
+Schema Milvus (collection `smartfactory_episodes`):
 
 | Campo | Tipo | Notas |
 |---|---|---|
-| `event_id` | VARCHAR(36) PK | mesma UUID do Silver |
+| `event_id` | VARCHAR(64) PK | id do episódio (station + start) |
 | `station` | VARCHAR(20) | |
-| `event_timestamp` | VARCHAR(30) | armazenado como string |
+| `event_timestamp` | VARCHAR(30) | início do episódio (start_ts) |
+| `end_ts` | VARCHAR(30) | fim do episódio |
 | `current_state` | VARCHAR(20) | |
 | `current_task` | VARCHAR(500) | |
 | `current_sub_task` | VARCHAR(300) | |
-| `log_text` | VARCHAR(1000) | o texto bruto que foi embedado |
+| `duration_s` | FLOAT | duração do episódio em segundos |
+| `is_anomaly` | BOOL | anomalia de duração por sub-tarefa |
+| `log_text` | VARCHAR(2000) | a narrativa do episódio que foi embedada |
 | `embedding` | FLOAT_VECTOR(768) | índice IVF_FLAT, métrica COSINE, nlist=128 |
-
-**Cap de volume**: variável `EMBED_LIMIT` (default 50.000;
-`embed_gold.py:49`). Amostragem aleatória com `random_state=42`
-quando o universo passa do cap.
 
 ---
 

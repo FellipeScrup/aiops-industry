@@ -174,7 +174,22 @@ anomalias). Só os episódios `not ready` são indexados por padrão
 - Docker Engine 24+ e Docker Compose v2
 - Python 3.12 e `make`
 - Dataset em `data/bronze/14441997/` (arquivos NDJSON)
-- ~4 GB de RAM livre para a stack completa
+- ~8 GB de RAM livre (Milvus + Postgres + Ollama)
+
+### Aceleração por GPU (Ollama)
+
+O modelo qwen2.5:7b em CPU leva ~120s por pergunta; com GPU cai para
+~10s. Há dois caminhos suportados:
+
+- **Linux com GPU NVIDIA** (ex.: Fedora, Ubuntu): instale o
+  [`nvidia-container-toolkit`](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+  O `docker-compose.yml` já reserva a GPU para o container `aiops-ollama`
+  — `make up` sobe Ollama com aceleração automaticamente.
+- **Windows/macOS com GPU AMD ou sem GPU dedicada**: o container Ollama
+  só roda em CPU (passthrough AMD em WSL é precário). Pare o container
+  (`docker compose stop ollama`) e instale o **Ollama nativo** do SO
+  (https://ollama.com/download) — ele detecta GPU AMD via Vulkan/DirectML.
+  O resto da stack (API/Gradio) continua apontando para `localhost:11434`.
 
 ### Subindo a stack
 

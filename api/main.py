@@ -62,8 +62,11 @@ def query_endpoint(body: QueryRequest) -> QueryResponse:
     t0 = time.perf_counter()
 
     try:
+        # use_hybrid=True: quando a pergunta cita estação (ex.: "SM_1"), filtra
+        # no Milvus por station antes da busca vetorial. Quando não cita,
+        # cai automaticamente para busca vetorial pura — estritamente melhor.
         result = rag_query(
-            body.question, top_k=body.top_k, model=body.model, use_hybrid=False,
+            body.question, top_k=body.top_k, model=body.model, use_hybrid=True,
         )
     except ConnectionError as exc:
         logger.error("Serviço indisponível: %s", exc)

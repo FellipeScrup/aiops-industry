@@ -54,6 +54,10 @@ SOURCE_SPLIT: str = os.getenv("EPISODE_SPLIT", "train")
 ANOMALY_MAD_K: float = 3.0
 ANOMALY_MIN_EXCESS_S: float = 2.0
 
+# Episode of a single 10 Hz event (n_events=1) has start_ts==end_ts and duration 0s.
+# These are transient samples without semantics — filter them out.
+MIN_EPISODE_EVENTS: int = 2
+
 EPISODES_TABLE: str = "smartfactory_episodes"
 
 _DDL = text(f"""
@@ -181,6 +185,13 @@ def _build_episodes(df: pd.DataFrame) -> pd.DataFrame:
         })
 
     episodes = pd.DataFrame(rows)
+
+    before = len(episodes)
+    episodes = episodes[episodes["n_events"] >= MIN_EPISODE_EVENTS].reset_index(drop=True)
+    dropped = before - len(episodes)
+    if dropped:
+        logger.info("Descartados %d episódios degenerados (n_events < %d).", dropped, MIN_EPISODE_EVENTS)
+
     logger.info(
         "%d episódios (not ready=%d, ready=%d).",
         len(episodes),

@@ -137,6 +137,13 @@ services:
 
   # ── LLM ───────────────────────────────────────────────────────────────────
   # Ollama: inferência local de LLMs (geração das respostas do RAG)
+  #
+  # Suporte a GPU:
+  #   - HOST com NVIDIA (Fedora/Ubuntu com nvidia-container-toolkit instalado):
+  #     o bloco `deploy.resources` abaixo passa a GPU para o container automaticamente.
+  #   - HOST com AMD/Intel/sem GPU: comente o bloco `deploy:` E use o Ollama nativo
+  #     do SO (Windows/macOS/Linux). Pare este serviço com `docker compose stop ollama`
+  #     antes de subir o Ollama nativo, para evitar conflito na porta 11434.
   ollama:
     image: ollama/ollama:latest
     container_name: aiops-ollama
@@ -147,6 +154,13 @@ services:
       - "11434:11434"
     networks:
       - aiops-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 30s

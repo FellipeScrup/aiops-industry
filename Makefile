@@ -7,6 +7,7 @@ COMPOSE := docker compose -f infra/docker/docker-compose.yml --env-file .env
         ingest-episodes export-silver medallion \
         embed test-retrieval \
         rag-query \
+        golden-set eval-generate eval-ragas eval-report eval \
         api ui serve
 
 help: ## Exibe esta mensagem de ajuda
@@ -77,6 +78,24 @@ test-retrieval: ## Testa busca vetorial no Milvus (uso: make test-retrieval QUER
 
 rag-query: ## Consulta o RAG (uso: make rag-query QUERY="..." [FLAGS="--hybrid"])
 	PYTHONPATH=. python rag/pipeline.py "$(QUERY)" $(FLAGS)
+
+# ── Avaliação (RAGAS + métricas de recuperação) ──────────────────────────────
+# Requer o venv isolado: python -m venv .venv-eval && .venv-eval/Scripts/pip install -r requirements.txt -r evaluation/requirements.txt
+EVAL_PY ?= .venv-eval/Scripts/python
+
+golden-set: ## Gera o golden set objetivo (24 perguntas) a partir do PostgreSQL
+	PYTHONPATH=. $(EVAL_PY) evaluation/golden_set.py
+
+eval-generate: ## Executa baseline, RAG vetorial e RAG com filtragem sobre o golden set (retomável)
+	PYTHONPATH=. $(EVAL_PY) evaluation/run_eval.py generate
+
+eval-ragas: ## Calcula as métricas RAGAS com juiz LLM local (retomável)
+	PYTHONPATH=. $(EVAL_PY) evaluation/run_eval.py ragas
+
+eval-report: ## Agrega resultados (IC bootstrap), gera tabelas e figuras em evaluation/results/
+	PYTHONPATH=. $(EVAL_PY) evaluation/run_eval.py report
+
+eval: golden-set eval-generate eval-ragas eval-report ## Avaliação completa
 
 # ── API + Interface ───────────────────────────────────────────────────────────
 

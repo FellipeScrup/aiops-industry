@@ -1,0 +1,483 @@
+[
+  {
+    "id": "fac-01",
+    "tier": "factual",
+    "subtype": "estacao_horario",
+    "question": "A estação HBW_1 ficou not ready em 2023-04-11 10:09:48. Qual tarefa e sub-tarefa ela estava executando e quanto tempo durou?",
+    "reference": "A estação HBW_1 ficou not ready por 13.2s executando 'storing a new workpiece in slot 4', sub-tarefa 'moving towards the slot 4'.",
+    "evidence_episode_ids": [
+      "HBW_1__20230411100948750000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "HBW_1"
+      ],
+      "timestamp": "2023-04-11 10:09:48"
+    }
+  },
+  {
+    "id": "fac-02",
+    "tier": "factual",
+    "subtype": "estacao_horario",
+    "question": "A estação VGR_1 ficou not ready em 2023-04-11 10:15:50. Qual tarefa e sub-tarefa ela estava executando e quanto tempo durou?",
+    "reference": "A estação VGR_1 ficou not ready por 10.9s executando 'picking up and transporting the workpiece from the sink_2 to the high_bay_warehouse_delivery_station', sub-tarefa 'moving towards the sink 2'.",
+    "evidence_episode_ids": [
+      "VGR_1__20230411101550000000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "VGR_1"
+      ],
+      "timestamp": "2023-04-11 10:15:50"
+    }
+  },
+  {
+    "id": "fac-03",
+    "tier": "factual",
+    "subtype": "estacao_horario",
+    "question": "A estação OV_1 ficou not ready em 2023-04-11 10:18:25. Qual tarefa e sub-tarefa ela estava executando e quanto tempo durou?",
+    "reference": "A estação OV_1 ficou not ready por 5.0s executando 'burning the workpiece for 2 seconds', sub-tarefa 'opening the oven door'.",
+    "evidence_episode_ids": [
+      "OV_1__20230411101825630000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "OV_1"
+      ],
+      "timestamp": "2023-04-11 10:18:25"
+    }
+  },
+  {
+    "id": "fac-04",
+    "tier": "factual",
+    "subtype": "estacao_horario",
+    "question": "A estação SM_1 ficou not ready em 2023-04-11 10:15:02. Qual tarefa e sub-tarefa ela estava executando e quanto tempo durou?",
+    "reference": "A estação SM_1 ficou not ready por 29.1s executando 'sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none', sub-tarefa 'detecting the workpiece color'.",
+    "evidence_episode_ids": [
+      "SM_1__20230411101502140000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "SM_1"
+      ],
+      "timestamp": "2023-04-11 10:15:02"
+    }
+  },
+  {
+    "id": "fac-05",
+    "tier": "factual",
+    "subtype": "descricao_semantica",
+    "question": "Qual foi a duração do episódio em que a estação HBW_1 executou 'unloading a workpiece from slot 0' na sub-tarefa 'dropping off the bucket at the slot'?",
+    "reference": "A estação HBW_1 ficou not ready por 11.0s executando 'unloading a workpiece from slot 0', sub-tarefa 'dropping off the bucket at the slot'.",
+    "evidence_episode_ids": [
+      "HBW_1__20230411101348880000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "HBW_1"
+      ],
+      "timestamp": null
+    }
+  },
+  {
+    "id": "fac-06",
+    "tier": "factual",
+    "subtype": "descricao_semantica",
+    "question": "Qual foi a duração do episódio em que a estação VGR_1 executou 'picking up and transporting the workpiece from the sink_1 to the high_bay_warehouse_delivery_station' na sub-tarefa 'picking up the workpiece from the sink 1'?",
+    "reference": "A estação VGR_1 ficou not ready por 0.8s executando 'picking up and transporting the workpiece from the sink_1 to the high_bay_warehouse_delivery_station', sub-tarefa 'picking up the workpiece from the sink 1'.",
+    "evidence_episode_ids": [
+      "VGR_1__20230411102434660000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "VGR_1"
+      ],
+      "timestamp": null
+    }
+  },
+  {
+    "id": "fac-07",
+    "tier": "factual",
+    "subtype": "descricao_semantica",
+    "question": "Qual foi a duração do episódio em que a estação SM_1 executou 'sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none' na sub-tarefa 'ejecting the workpiece to the sink 1'?",
+    "reference": "A estação SM_1 ficou not ready por 1.4s executando 'sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none', sub-tarefa 'ejecting the workpiece to the sink 1'.",
+    "evidence_episode_ids": [
+      "SM_1__20230411102421700000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "SM_1"
+      ],
+      "timestamp": null
+    }
+  },
+  {
+    "id": "fac-08",
+    "tier": "factual",
+    "subtype": "descricao_semantica",
+    "question": "Qual foi a duração do episódio em que a estação HBW_1 executou 'storing a new workpiece in slot 3' na sub-tarefa 'transporting the bucket to the high-bay warehouse crane jib'?",
+    "reference": "A estação HBW_1 ficou not ready por 4.8s executando 'storing a new workpiece in slot 3', sub-tarefa 'transporting the bucket to the high-bay warehouse crane jib'.",
+    "evidence_episode_ids": [
+      "HBW_1__20230411100749220000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "HBW_1"
+      ],
+      "timestamp": null
+    }
+  },
+  {
+    "id": "cro-01",
+    "tier": "cross_station",
+    "subtype": "duas_estacoes",
+    "question": "Por volta de 2023-04-11 10:01:01, as estações VGR_1 e HBW_1 ficaram not ready quase ao mesmo tempo. O que cada uma estava fazendo e por quanto tempo?",
+    "reference": "A estação VGR_1 ficou not ready por 0.7s executando 'picking up and transporting the workpiece from the delivery_pick_up_station to the color_detection_delivery_pick_up_station', sub-tarefa 'calibrating motor 3'. A estação HBW_1 ficou not ready por 12.6s executando 'calibrating all components', sub-tarefa 'calibrating motor 2'.",
+    "evidence_episode_ids": [
+      "VGR_1__20230411100101960000",
+      "HBW_1__20230411100102850000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "VGR_1",
+        "HBW_1"
+      ],
+      "timestamp": "2023-04-11 10:01:01"
+    }
+  },
+  {
+    "id": "cro-02",
+    "tier": "cross_station",
+    "subtype": "duas_estacoes",
+    "question": "Por volta de 2023-04-11 10:31:13, as estações VGR_1 e HBW_1 ficaram not ready quase ao mesmo tempo. O que cada uma estava fazendo e por quanto tempo?",
+    "reference": "A estação VGR_1 ficou not ready por 5.6s executando 'calibrating all components', sub-tarefa 'calibrating motor 1'. A estação HBW_1 ficou not ready por 11.0s executando 'unloading a workpiece from slot 4', sub-tarefa 'dropping off the bucket at the slot'.",
+    "evidence_episode_ids": [
+      "VGR_1__20230411103113660000",
+      "HBW_1__20230411103116240000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "VGR_1",
+        "HBW_1"
+      ],
+      "timestamp": "2023-04-11 10:31:13"
+    }
+  },
+  {
+    "id": "cro-03",
+    "tier": "cross_station",
+    "subtype": "duas_estacoes",
+    "question": "Por volta de 2023-04-11 10:18:19, as estações VGR_1 e HBW_1 ficaram not ready quase ao mesmo tempo. O que cada uma estava fazendo e por quanto tempo?",
+    "reference": "A estação VGR_1 ficou not ready por 5.6s executando 'calibrating all components', sub-tarefa 'calibrating motor 1'. A estação HBW_1 ficou not ready por 11.0s executando 'unloading a workpiece from slot 1', sub-tarefa 'dropping off the bucket at the slot'.",
+    "evidence_episode_ids": [
+      "VGR_1__20230411101819960000",
+      "HBW_1__20230411101821300000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "VGR_1",
+        "HBW_1"
+      ],
+      "timestamp": "2023-04-11 10:18:19"
+    }
+  },
+  {
+    "id": "cro-04",
+    "tier": "cross_station",
+    "subtype": "duas_estacoes",
+    "question": "Por volta de 2023-04-11 10:29:46, as estações HBW_1 e VGR_1 ficaram not ready quase ao mesmo tempo. O que cada uma estava fazendo e por quanto tempo?",
+    "reference": "A estação HBW_1 ficou not ready por 3.7s executando 'calibrating all components', sub-tarefa 'calibrating motor 4'. A estação VGR_1 ficou not ready por 1.6s executando 'calibrating all components', sub-tarefa 'calibrating motor 1'.",
+    "evidence_episode_ids": [
+      "HBW_1__20230411102946510000",
+      "VGR_1__20230411102950340000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "HBW_1",
+        "VGR_1"
+      ],
+      "timestamp": "2023-04-11 10:29:46"
+    }
+  },
+  {
+    "id": "cro-05",
+    "tier": "cross_station",
+    "subtype": "duas_estacoes",
+    "question": "Por volta de 2023-04-11 10:15:48, as estações SM_1 e VGR_1 ficaram not ready quase ao mesmo tempo. O que cada uma estava fazendo e por quanto tempo?",
+    "reference": "A estação SM_1 ficou not ready por 1.4s executando 'sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none', sub-tarefa 'ejecting the workpiece to the sink 2'. A estação VGR_1 ficou not ready por 10.9s executando 'picking up and transporting the workpiece from the sink_2 to the high_bay_warehouse_delivery_station', sub-tarefa 'moving towards the sink 2'.",
+    "evidence_episode_ids": [
+      "SM_1__20230411101548540000",
+      "VGR_1__20230411101550000000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "SM_1",
+        "VGR_1"
+      ],
+      "timestamp": "2023-04-11 10:15:48"
+    }
+  },
+  {
+    "id": "cro-06",
+    "tier": "cross_station",
+    "subtype": "duas_estacoes",
+    "question": "Por volta de 2023-04-11 10:13:48, as estações HBW_1 e OV_1 ficaram not ready quase ao mesmo tempo. O que cada uma estava fazendo e por quanto tempo?",
+    "reference": "A estação HBW_1 ficou not ready por 11.0s executando 'unloading a workpiece from slot 0', sub-tarefa 'dropping off the bucket at the slot'. A estação OV_1 ficou not ready por 5.0s executando 'burning the workpiece for 2 seconds', sub-tarefa 'opening the oven door'.",
+    "evidence_episode_ids": [
+      "HBW_1__20230411101348880000",
+      "OV_1__20230411101350490000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "HBW_1",
+        "OV_1"
+      ],
+      "timestamp": "2023-04-11 10:13:48"
+    }
+  },
+  {
+    "id": "cro-07",
+    "tier": "cross_station",
+    "subtype": "duas_estacoes",
+    "question": "Por volta de 2023-04-11 10:20:22, as estações SM_1 e VGR_1 ficaram not ready quase ao mesmo tempo. O que cada uma estava fazendo e por quanto tempo?",
+    "reference": "A estação SM_1 ficou not ready por 1.4s executando 'sorting the workpiece which is located at initial using the nfc reader into the predefined ejection location none', sub-tarefa 'ejecting the workpiece to the sink 3'. A estação VGR_1 ficou not ready por 12.1s executando 'picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station', sub-tarefa 'moving towards the sink 3'.",
+    "evidence_episode_ids": [
+      "SM_1__20230411102022320000",
+      "VGR_1__20230411102023850000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "SM_1",
+        "VGR_1"
+      ],
+      "timestamp": "2023-04-11 10:20:22"
+    }
+  },
+  {
+    "id": "cro-08",
+    "tier": "cross_station",
+    "subtype": "duas_estacoes",
+    "question": "Por volta de 2023-04-11 10:26:55, as estações OV_1 e HBW_1 ficaram not ready quase ao mesmo tempo. O que cada uma estava fazendo e por quanto tempo?",
+    "reference": "A estação OV_1 ficou not ready por 5.0s executando 'burning the workpiece for 2 seconds', sub-tarefa 'opening the oven door'. A estação HBW_1 ficou not ready por 10.9s executando 'unloading a workpiece from slot 3', sub-tarefa 'dropping off the bucket at the slot'.",
+    "evidence_episode_ids": [
+      "OV_1__20230411102655910000",
+      "HBW_1__20230411102656980000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "OV_1",
+        "HBW_1"
+      ],
+      "timestamp": "2023-04-11 10:26:55"
+    }
+  },
+  {
+    "id": "cau-01",
+    "tier": "causal",
+    "subtype": "anomalia_sim",
+    "question": "A calibração do motor 4 da estação HBW_1 iniciada em 2023-04-11 10:29:46 foi anormalmente longa em relação ao tempo típico?",
+    "reference": "Sim. A calibração do motor 4 durou 3.7s, 2.8s acima da mediana de 1.0s para essa sub-tarefa (limiar 1.1s): duração anômala.",
+    "evidence_episode_ids": [
+      "HBW_1__20230411102946510000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "HBW_1"
+      ],
+      "timestamp": "2023-04-11 10:29:46",
+      "is_anomaly": true
+    }
+  },
+  {
+    "id": "cau-02",
+    "tier": "causal",
+    "subtype": "anomalia_sim",
+    "question": "A calibração do motor 4 da estação HBW_1 iniciada em 2023-04-11 10:09:19 foi anormalmente longa em relação ao tempo típico?",
+    "reference": "Sim. A calibração do motor 4 durou 3.6s, 2.7s acima da mediana de 1.0s para essa sub-tarefa (limiar 1.1s): duração anômala.",
+    "evidence_episode_ids": [
+      "HBW_1__20230411100919950000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "HBW_1"
+      ],
+      "timestamp": "2023-04-11 10:09:19",
+      "is_anomaly": true
+    }
+  },
+  {
+    "id": "cau-03",
+    "tier": "causal",
+    "subtype": "anomalia_sim",
+    "question": "A calibração do motor 4 da estação HBW_1 iniciada em 2023-04-11 10:12:11 foi anormalmente longa em relação ao tempo típico?",
+    "reference": "Sim. A calibração do motor 4 durou 3.7s, 2.8s acima da mediana de 1.0s para essa sub-tarefa (limiar 1.1s): duração anômala.",
+    "evidence_episode_ids": [
+      "HBW_1__20230411101211340000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "HBW_1"
+      ],
+      "timestamp": "2023-04-11 10:12:11",
+      "is_anomaly": true
+    }
+  },
+  {
+    "id": "cau-04",
+    "tier": "causal",
+    "subtype": "anomalia_nao",
+    "question": "A calibração do motor 4 da estação HBW_1 iniciada em 2023-04-11 10:25:18 foi anormalmente longa em relação ao tempo típico?",
+    "reference": "Não. A calibração do motor 4 durou 1.0s, dentro do normal (mediana de 1.0s para essa sub-tarefa).",
+    "evidence_episode_ids": [
+      "HBW_1__20230411102518770000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "HBW_1"
+      ],
+      "timestamp": "2023-04-11 10:25:18",
+      "is_anomaly": false
+    }
+  },
+  {
+    "id": "cau-05",
+    "tier": "causal",
+    "subtype": "anomalia_nao",
+    "question": "A calibração do motor 4 da estação HBW_1 iniciada em 2023-04-11 10:21:28 foi anormalmente longa em relação ao tempo típico?",
+    "reference": "Não. A calibração do motor 4 durou 1.0s, dentro do normal (mediana de 1.0s para essa sub-tarefa).",
+    "evidence_episode_ids": [
+      "HBW_1__20230411102128010000"
+    ],
+    "evidence_mode": "all",
+    "meta": {
+      "stations": [
+        "HBW_1"
+      ],
+      "timestamp": "2023-04-11 10:21:28",
+      "is_anomaly": false
+    }
+  },
+  {
+    "id": "cau-06",
+    "tier": "causal",
+    "subtype": "impacto_bpm",
+    "question": "Se a estação MM_1 ficar parada enquanto executa 'transporting the workpiece from the initial to the mill, milling it for 1 seconds and transporting it to the ejection afterwards', qual atividade do processo é interrompida e qual é a próxima estação da linha?",
+    "reference": "A atividade interrompida é 'Mill workpiece' (processo Production); a próxima estação do processo é SM_1 via VGR_1.",
+    "evidence_episode_ids": [
+      "MM_1__20230411101450770000",
+      "MM_1__20230411101452560000",
+      "MM_1__20230411101453640000",
+      "MM_1__20230411101454560000",
+      "MM_1__20230411101455520000",
+      "MM_1__20230411101459590000",
+      "MM_1__20230411101925500000",
+      "MM_1__20230411101927170000",
+      "MM_1__20230411101928240000",
+      "MM_1__20230411101929080000",
+      "MM_1__20230411101930150000",
+      "MM_1__20230411101934090000",
+      "MM_1__20230411102349380000",
+      "MM_1__20230411102351100000",
+      "MM_1__20230411102352050000",
+      "MM_1__20230411102352870000",
+      "MM_1__20230411102353940000",
+      "MM_1__20230411102357910000",
+      "MM_1__20230411102755320000",
+      "MM_1__20230411102757140000",
+      "MM_1__20230411102758100000",
+      "MM_1__20230411102758970000",
+      "MM_1__20230411102800040000",
+      "MM_1__20230411102803990000",
+      "MM_1__20230411103218840000",
+      "MM_1__20230411103220510000",
+      "MM_1__20230411103221480000",
+      "MM_1__20230411103222350000",
+      "MM_1__20230411103223310000",
+      "MM_1__20230411103227390000"
+    ],
+    "evidence_mode": "any",
+    "meta": {
+      "stations": [
+        "MM_1"
+      ],
+      "timestamp": null
+    }
+  },
+  {
+    "id": "cau-07",
+    "tier": "causal",
+    "subtype": "impacto_bpm",
+    "question": "Se a estação HBW_1 ficar parada enquanto executa 'unloading a workpiece from slot 1', qual atividade do processo é interrompida e qual é a próxima estação da linha?",
+    "reference": "A atividade interrompida é 'Unload workpiece from warehouse slot' (processo Production); a próxima estação do processo é VGR_1.",
+    "evidence_episode_ids": [
+      "HBW_1__20230411101659010000",
+      "HBW_1__20230411101710020000",
+      "HBW_1__20230411101721460000",
+      "HBW_1__20230411101735460000",
+      "HBW_1__20230411101746550000",
+      "HBW_1__20230411101747430000",
+      "HBW_1__20230411101751780000",
+      "HBW_1__20230411101756830000",
+      "HBW_1__20230411101759120000",
+      "HBW_1__20230411101810950000",
+      "HBW_1__20230411101821300000"
+    ],
+    "evidence_mode": "any",
+    "meta": {
+      "stations": [
+        "HBW_1"
+      ],
+      "timestamp": null
+    }
+  },
+  {
+    "id": "cau-08",
+    "tier": "causal",
+    "subtype": "impacto_bpm",
+    "question": "Se a estação VGR_1 ficar parada enquanto executa 'picking up and transporting the workpiece from the sink_3 to the high_bay_warehouse_delivery_station', qual atividade do processo é interrompida e qual é a próxima estação da linha?",
+    "reference": "A atividade interrompida é 'Transport workpiece to HBW' (processo Storage); a próxima estação do processo é HBW_1.",
+    "evidence_episode_ids": [
+      "VGR_1__20230411102023850000",
+      "VGR_1__20230411102036050000",
+      "VGR_1__20230411102037120000",
+      "VGR_1__20230411102043570000",
+      "VGR_1__20230411102048480000",
+      "VGR_1__20230411102055740000",
+      "VGR_1__20230411102058220000",
+      "VGR_1__20230411103300070000",
+      "VGR_1__20230411103311630000",
+      "VGR_1__20230411103312590000",
+      "VGR_1__20230411103319130000",
+      "VGR_1__20230411103323700000",
+      "VGR_1__20230411103330860000",
+      "VGR_1__20230411103333410000"
+    ],
+    "evidence_mode": "any",
+    "meta": {
+      "stations": [
+        "VGR_1"
+      ],
+      "timestamp": null
+    }
+  }
+]

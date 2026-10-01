@@ -70,11 +70,30 @@ def _format_context(context: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _ollama_options() -> dict:
+    """Opções de amostragem opcionais, lidas do ambiente a cada chamada.
+
+    Sem LLM_TEMPERATURE/LLM_SEED o comportamento é o padrão do servidor Ollama.
+    A avaliação (evaluation/run_eval.py) fixa temperature=0 e seed para que as
+    respostas sejam reproduzíveis.
+    """
+    options: dict = {}
+    if os.getenv("LLM_TEMPERATURE"):
+        options["temperature"] = float(os.environ["LLM_TEMPERATURE"])
+    if os.getenv("LLM_SEED"):
+        options["seed"] = int(os.environ["LLM_SEED"])
+    return options
+
+
 def _generate_ollama(prompt: str, model: str) -> tuple[str, dict]:
+    payload: dict = {"model": model, "prompt": prompt, "stream": False}
+    options = _ollama_options()
+    if options:
+        payload["options"] = options
     try:
         resp = requests.post(
             f"{OLLAMA_BASE}/api/generate",
-            json={"model": model, "prompt": prompt, "stream": False},
+            json=payload,
             timeout=300,
         )
         resp.raise_for_status()

@@ -42,13 +42,17 @@ _BPM_TABLE: list[tuple[str, list[str], str, str, str]] = [
         "Deliver workpiece to DPS",           "Production", "DPS"),
     ("VGR_1", ["move", "dps"],
         "Move to DPS",                        "Production", "DPS"),
-    ("VGR_1", ["move"],
+    ("VGR_1", ["mov", "warehouse"],
+        "Move to HBW holding position",       "Storage",    "HBW_1"),
+    ("VGR_1", ["mov"],
         "Move to target station",             "Production/Storage", "-"),
+    ("VGR_1", ["calibrat"],
+        "Calibrate gripper robot components", "Maintenance", "-"),
 
     # ── HBW_1 (High-Bay Warehouse) ────────────────────────────────────────────
     ("HBW_1", ["unload"],
         "Unload workpiece from warehouse slot", "Production", "VGR_1"),
-    ("HBW_1", ["store"],
+    ("HBW_1", ["stor"],
         "Store workpiece in warehouse slot",    "Storage",    "idle"),
     ("HBW_1", ["calibrat"],
         "Calibrate warehouse components",       "Maintenance", "-"),
@@ -58,6 +62,10 @@ _BPM_TABLE: list[tuple[str, list[str], str, str, str]] = [
     # ── OV_1 (Oven) ───────────────────────────────────────────────────────────
     ("OV_1", ["heat"],
         "Heat workpiece in oven",               "Production", "MM_1 via VGR_1"),
+    ("OV_1", ["burn"],
+        "Heat workpiece in oven",               "Production", "MM_1 via VGR_1"),
+    ("OV_1", ["transport", "mill"],
+        "Transport workpiece to Milling Machine", "Production", "MM_1"),
     ("OV_1", ["load"],
         "Load workpiece into oven",             "Production", "OV_1"),
     ("OV_1", ["unload"],
@@ -107,6 +115,13 @@ def get_bpm_context(station: str, current_task: str) -> dict[str, str] | None:
         return None
 
     task_lower = current_task.lower()
+
+    # Tarefas "picking up and transporting ... from A to the B": o que define a
+    # atividade BPM é o DESTINO (B). Casar palavras-chave na string inteira
+    # confundia origem e destino (ex.: "from the sink_2 to the warehouse"
+    # era classificado como transporte para o Sink).
+    if task_lower.startswith("picking up and transporting") and " to the " in task_lower:
+        task_lower = "transport " + task_lower.rsplit(" to the ", 1)[1]
 
     for row_station, keywords, activity, process, next_station in _BPM_TABLE:
         if row_station != station:

@@ -85,11 +85,29 @@ def _ollama_options() -> dict:
     return options
 
 
+def _ollama_think() -> bool | None:
+    """Liga/desliga o modo de raciocínio (thinking) via LLM_THINK=0/1; None = padrão do modelo.
+
+    Modelos com thinking (ex.: qwen3.5, gemma4) gastam tokens e latência raciocinando
+    e podem devolver `response` vazio. A avaliação desliga (LLM_THINK=0) para que a
+    comparação entre geradores seja justa e comparável ao qwen2.5.
+    """
+    raw = os.getenv("LLM_THINK", "").strip().lower()
+    if raw in ("0", "false", "no"):
+        return False
+    if raw in ("1", "true", "yes"):
+        return True
+    return None
+
+
 def _generate_ollama(prompt: str, model: str) -> tuple[str, dict]:
     payload: dict = {"model": model, "prompt": prompt, "stream": False}
     options = _ollama_options()
     if options:
         payload["options"] = options
+    think = _ollama_think()
+    if think is not None:
+        payload["think"] = think
     try:
         resp = requests.post(
             f"{OLLAMA_BASE}/api/generate",

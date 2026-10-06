@@ -7,19 +7,28 @@ Etapas (cada uma retomável — usa checkpoint em evaluation/results/):
     ragas     calcula métricas RAGAS (juiz LLM local)      -> ragas_scores.jsonl
     report    agrega tudo, calcula IC bootstrap e gera     -> summary.json + figuras
               tabelas/figuras em evaluation/results/
+    compare   tabela lado a lado de todos os geradores já avaliados + diferença pareada
 
 Uso (a partir da raiz, com o venv de avaliação):
 
-    PYTHONPATH=. .venv-eval/Scripts/python evaluation/run_eval.py generate
-    PYTHONPATH=. .venv-eval/Scripts/python evaluation/run_eval.py ragas [--limit N]
-    PYTHONPATH=. .venv-eval/Scripts/python evaluation/run_eval.py report
+    PYTHONPATH=. .venv-eval/Scripts/python evaluation/run_eval.py generate --model qwen3.5:9b
+    PYTHONPATH=. .venv-eval/Scripts/python evaluation/run_eval.py ragas    --model qwen3.5:9b [--judge phi4] [--limit N]
+    PYTHONPATH=. .venv-eval/Scripts/python evaluation/run_eval.py report   --model qwen3.5:9b
+    PYTHONPATH=. .venv-eval/Scripts/python evaluation/run_eval.py compare
+
+Cada gerador grava em evaluation/results/<modelo>/ (o qwen2.5:7b, que já tinha resultados,
+permanece na raiz de evaluation/results/).
 
 Decisões metodológicas:
-  * Geração com temperature=0 e seed fixo (reprodutibilidade).
+  * Geração com temperature=0, seed fixo e thinking desligado (reprodutibilidade e
+    comparação justa entre modelos com e sem modo de raciocínio).
   * Métricas de recuperação (Hit@k, MRR, Recall@k) e key-fact recall são DETERMINÍSTICAS
     (comparam ids de episódios / números e estações da referência) — não dependem de juiz LLM.
-  * Métricas RAGAS usam o próprio Qwen2.5 7B local como juiz (consistente com a execução
-    100% local do projeto); o viés de auto-avaliação é tratado como ameaça à validade.
+    A recuperação independe do gerador: só varia entre RAG vetorial e RAG com filtragem.
+  * Métricas RAGAS usam juiz LLM LOCAL de TERCEIRA família (padrão: phi4), diferente dos
+    geradores avaliados (Qwen, Gemma), para evitar viés de autopreferência. Um aviso é
+    emitido se juiz e gerador forem da mesma família. Notas RAGAS só são comparáveis entre
+    geradores avaliados pelo MESMO juiz. Taxa de NaN do juiz é reportada em summary.json.
 """
 
 from __future__ import annotations
@@ -36,14 +45,26 @@ from pathlib import Path
 
 os.environ.setdefault("LLM_TEMPERATURE", "0")
 os.environ.setdefault("LLM_SEED", "42")
+os.environ.setdefault("LLM_THINK", "0")  # sem raciocínio: comparação justa entre geradores
 
 import numpy as np  # noqa: E402
 
 logger = logging.getLogger("evaluation")
 
+from dotenv import load_dotenv  # noqa: E402
+
+load_dotenv()
+
 ROOT = Path(__file__).resolve().parent
-RESULTS = ROOT / "results"
+BASE_RESULTS = ROOT / "results"
 GOLDEN = ROOT / "golden_set.json"
+
+# Resultados de cada gerador ficam em results/<modelo>/. O gerador "legado" (qwen2.5:7b),
+# que já tinha resultados antes desta separação, continua na raiz de results/ — assim nada
+# que já foi gerado (nem as figuras já usadas no texto do TCC) precisa ser movido.
+LEGACY_MODEL = "qwen2.5:7b"
+GEN_MODEL = LEGACY_MODEL
+RESULTS = BASE_RESULTS
 GENERATIONS = RESULTS / "generations.jsonl"
 RAGAS_SCORES = RESULTS / "ragas_scores.jsonl"
 
@@ -57,7 +78,10 @@ SYSTEM_LABEL = {
 TIERS = ("factual", "cross_station", "causal")
 TIER_LABEL = {"factual": "Factual", "cross_station": "Multi-estação", "causal": "Causal"}
 
-JUDGE_MODEL = os.getenv("JUDGE_MODEL", os.getenv("LLM_MODEL", "qwen2.5:7b"))
+# Juiz de TERCEIRA família (nem Qwen, nem Gemma): evita viés de autopreferência quando o
+# juiz avalia texto escrito por um modelo da própria família.
+DEFAULT_JUDGE = "phi4"
+JUDGE_MODEL = os.getenv("JUDGE_MODEL", DEFAULT_JUDGE)
 BOOTSTRAP_N = 10_000
 BOOTSTRAP_SEED = 42
 
@@ -75,6 +99,28 @@ Resposta:
 
 
 # ── utilidades ──────────────────────────────────────────────────────────────
+
+def _slug(model: str) -> str:
+    return re.sub(r"[^a-z0-9.]+", "-", model.lower()).strip("-")
+
+
+def _family(model: str) -> str:
+    """Família do modelo pelo prefixo alfabético do nome ("qwen2.5:7b" e "qwen3.5:9b" -> "qwen")."""
+    m = re.match(r"[a-z]+", model.lower().split("/")[-1])
+    return m.group(0) if m else model.lower()
+
+
+def _configure(model: str, judge: str) -> None:
+    """Define gerador, juiz e as pastas de saída (uma por gerador)."""
+    global GEN_MODEL, JUDGE_MODEL, RESULTS, GENERATIONS, RAGAS_SCORES
+    GEN_MODEL, JUDGE_MODEL = model, judge
+    RESULTS = BASE_RESULTS if model == LEGACY_MODEL else BASE_RESULTS / _slug(model)
+    GENERATIONS = RESULTS / "generations.jsonl"
+    RAGAS_SCORES = RESULTS / "ragas_scores.jsonl"
+    if _family(model) == _family(judge):
+        logger.warning("Juiz '%s' é da MESMA família do gerador '%s': risco de viés de "
+                       "autopreferência. Prefira um juiz de outra família.", judge, model)
+
 
 def _read_jsonl(path: Path) -> list[dict]:
     if not path.exists():
@@ -111,13 +157,13 @@ def _context_text(hit: dict) -> str:
 # ── etapa 1: geração ────────────────────────────────────────────────────────
 
 def stage_generate(limit: int | None) -> None:
-    from rag.generator import DEFAULT_MODEL, _generate_ollama  # noqa: PLC0415
+    from rag.generator import _generate_ollama  # noqa: PLC0415
     from rag.pipeline import query as rag_query  # noqa: PLC0415
 
     golden = _load_golden()[:limit] if limit else _load_golden()
     done = {(r["id"], r["system"]) for r in _read_jsonl(GENERATIONS)}
-    logger.info("Gerando %d perguntas x %d sistemas (%d já feitos) com %s",
-                len(golden), len(SYSTEMS), len(done), DEFAULT_MODEL)
+    logger.info("Gerando %d perguntas x %d sistemas (%d já feitos) com %s -> %s",
+                len(golden), len(SYSTEMS), len(done), GEN_MODEL, RESULTS)
 
     for item in golden:
         for system in SYSTEMS:
@@ -125,15 +171,16 @@ def stage_generate(limit: int | None) -> None:
                 continue
             t0 = time.perf_counter()
             if system == "baseline":
-                answer, usage = _generate_ollama(_BASELINE_PROMPT.format(query=item["question"]), DEFAULT_MODEL)
+                answer, usage = _generate_ollama(_BASELINE_PROMPT.format(query=item["question"]), GEN_MODEL)
                 hits: list[dict] = []
             else:
-                out = rag_query(item["question"], top_k=TOP_K, model=DEFAULT_MODEL,
+                out = rag_query(item["question"], top_k=TOP_K, model=GEN_MODEL,
                                 use_hybrid=(system == "rag_filtrado"))
                 answer, usage, hits = out["answer"], out["token_usage"], out["context"]
             latency = time.perf_counter() - t0
 
             _append_jsonl(GENERATIONS, {
+                "model": GEN_MODEL,
                 "id": item["id"], "tier": item["tier"], "subtype": item["subtype"], "system": system,
                 "question": item["question"], "reference": item["reference"], "answer": answer,
                 "retrieved_ids": [h["event_id"] for h in hits],
@@ -244,7 +291,7 @@ def stage_ragas(limit: int | None) -> None:
     if limit:
         keep = {g["id"] for g in _load_golden()[:limit]}
         gens = [g for g in gens if g["id"] in keep]
-    done = {(r["id"], r["system"]) for r in _read_jsonl(RAGAS_SCORES)}
+    done = {(r["id"], r["system"]) for r in _read_jsonl(RAGAS_SCORES) if r.get("judge") == JUDGE_MODEL}
     llm, emb = _build_judge()
     run_cfg = RunConfig(timeout=600, max_workers=1, max_retries=2)
 
@@ -269,11 +316,15 @@ def stage_ragas(limit: int | None) -> None:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Falha em %s/%s: %s", g["id"], g["system"], exc)
             row = {}
+        # ragas 0.2.10 nomeia a coluna "factual_correctness"; versões novas, "factual_correctness(mode=f1)".
+        row = {("factual_correctness" if k.startswith("factual_correctness") else k): v
+               for k, v in row.items()}
         scores = {k: (None if (v is None or (isinstance(v, float) and math.isnan(v))) else float(v))
                   for k, v in row.items() if k in {
                       "faithfulness", "answer_relevancy", "llm_context_precision_with_reference",
-                      "context_recall", "factual_correctness(mode=f1)"}}
-        _append_jsonl(RAGAS_SCORES, {"id": g["id"], "system": g["system"], "tier": g["tier"], **scores})
+                      "context_recall", "factual_correctness"}}
+        _append_jsonl(RAGAS_SCORES, {"judge": JUDGE_MODEL, "id": g["id"], "system": g["system"],
+                                     "tier": g["tier"], **scores})
         logger.info("[%d/%d] %s/%s em %.0fs -> %s", n, len(todo), g["id"], g["system"],
                     time.perf_counter() - t0, {k: (round(v, 2) if v is not None else None) for k, v in scores.items()})
 
@@ -285,7 +336,7 @@ RAGAS_COLS = {
     "answer_relevancy": "Answer Relevancy",
     "llm_context_precision_with_reference": "Context Precision",
     "context_recall": "Context Recall",
-    "factual_correctness(mode=f1)": "Factual Correctness",
+    "factual_correctness": "Factual Correctness",
 }
 
 
@@ -318,7 +369,7 @@ def stage_report() -> None:
 
     golden = {g["id"]: g for g in _load_golden()}
     gens = _read_jsonl(GENERATIONS)
-    ragas = {(r["id"], r["system"]): r for r in _read_jsonl(RAGAS_SCORES)}
+    ragas = {(r["id"], r["system"]): r for r in _read_jsonl(RAGAS_SCORES) if r.get("judge") == JUDGE_MODEL}
     rng = np.random.default_rng(BOOTSTRAP_SEED)
 
     # tabela longa: uma linha por (pergunta, sistema)
@@ -341,7 +392,7 @@ def stage_report() -> None:
         rows.append(row)
 
     metric_cols = ["hit_at_k", "mrr", "recall_at_k", "key_fact_recall", "verdict_correct", *RAGAS_COLS]
-    summary: dict = {"n_questions": len(golden), "top_k": TOP_K, "judge": JUDGE_MODEL,
+    summary: dict = {"n_questions": len(golden), "top_k": TOP_K, "generator": GEN_MODEL, "judge": JUDGE_MODEL,
                      "bootstrap": {"n": BOOTSTRAP_N, "seed": BOOTSTRAP_SEED},
                      "overall": {}, "by_tier": {}, "paired": {}, "cost": {}, "ragas_nan": {}}
 
@@ -370,13 +421,13 @@ def stage_report() -> None:
             "prompt_tokens_mean": float(np.mean([r["prompt_tokens"] for r in sys_rows])),
             "total_tokens_mean": float(np.mean([r["total_tokens"] for r in sys_rows])),
         }
-        expected = [c for c in RAGAS_COLS if system != "baseline" or c in ("answer_relevancy", "factual_correctness(mode=f1)")]
+        expected = [c for c in RAGAS_COLS if system != "baseline" or c in ("answer_relevancy", "factual_correctness")]
         summary["ragas_nan"][system] = {c: sum(1 for r in sys_rows if r.get(c) is None) for c in expected}
 
     # comparações pareadas (por pergunta)
     for a, b in (("rag_vetorial", "baseline"), ("rag_filtrado", "baseline"), ("rag_filtrado", "rag_vetorial")):
         summary["paired"][f"{a}_vs_{b}"] = {}
-        for col in ("key_fact_recall", "factual_correctness(mode=f1)", "answer_relevancy"):
+        for col in ("key_fact_recall", "factual_correctness", "answer_relevancy"):
             summary["paired"][f"{a}_vs_{b}"][col] = _paired_diff(vals(a, col), vals(b, col), rng)
         if b != "baseline":
             for col in ("hit_at_k", "mrr", "recall_at_k", "faithfulness", "context_recall",
@@ -490,17 +541,70 @@ def _print_tables(summary: dict) -> None:
     print("== NaN RAGAS ==", json.dumps(summary["ragas_nan"]))
 
 
+COMPARE_COLS = [
+    ("key_fact_recall", "FatosChave"),
+    ("verdict_correct", "Veredito"),
+    ("faithfulness", "Faithful."),
+    ("factual_correctness", "FactualCorr"),
+]
+
+
+def stage_compare() -> None:
+    """Compara geradores lado a lado a partir dos summary.json / per_question.json de cada pasta."""
+    dirs = [BASE_RESULTS] + sorted(p for p in BASE_RESULTS.iterdir() if p.is_dir() and p.name != "figuras")
+    runs: list[tuple[str, dict, list[dict]]] = []
+    for d in dirs:
+        sf, pf = d / "summary.json", d / "per_question.json"
+        if sf.exists() and pf.exists():
+            s = json.loads(sf.read_text(encoding="utf-8"))
+            runs.append((s.get("generator", d.name), s, json.loads(pf.read_text(encoding="utf-8"))))
+    if not runs:
+        print("Nenhum resultado agregado. Rode 'report' para cada gerador antes de comparar.")
+        return
+
+    for system in ("rag_filtrado", "rag_vetorial"):
+        print(f"\n== {SYSTEM_LABEL[system]} (média [IC95%]; juiz diferente => notas RAGAS não comparáveis) ==")
+        print(f"{'gerador':16} {'juiz':8} " + " ".join(f"{lbl:>20}" for _, lbl in COMPARE_COLS)
+              + f" {'lat(s)':>7} {'tokens':>7}")
+        for name, s, _ in runs:
+            o, c = s["overall"][system], s["cost"][system]
+            print(f"{name:16} {s.get('judge', '?'):8} "
+                  + " ".join(f"{_fmt(o.get(col)):>20}" for col, _ in COMPARE_COLS)
+                  + f" {c['latency_s_mean']:7.1f} {c['total_tokens_mean']:7.0f}")
+
+    # Diferença pareada por pergunta (mesmas 24 perguntas) em relação ao primeiro gerador
+    ref_name, _, ref_rows = runs[0]
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    print(f"\n== Diferença pareada vs {ref_name} (Δ, IC95% bootstrap; n = nº de perguntas) ==")
+    for name, _, rows in runs[1:]:
+        for system in ("rag_filtrado", "rag_vetorial"):
+            for col in ("key_fact_recall", "verdict_correct"):
+                a = {r["id"]: r.get(col) for r in rows if r["system"] == system}
+                b = {r["id"]: r.get(col) for r in ref_rows if r["system"] == system}
+                r_ = _paired_diff(a, b, rng)
+                if r_.get("n"):
+                    print(f"{name:16} {system:13} {col:16} Δ={r_['diff']:+.3f} "
+                          f"[{r_['ci_low']:+.3f}; {r_['ci_high']:+.3f}] n={r_['n']}")
+    print("\nObs.: com 24 perguntas, IC que cruza 0 => diferença não distinguível de ruído.")
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     for noisy in ("httpx", "urllib3", "pymilvus", "rag.retriever", "rag.generator", "rag.pipeline"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("stage", choices=["generate", "ragas", "report"])
+    parser.add_argument("stage", choices=["generate", "ragas", "report", "compare"])
     parser.add_argument("--limit", type=int, default=None, help="usa só as N primeiras perguntas (smoke test)")
+    parser.add_argument("--model", default=os.getenv("LLM_MODEL", LEGACY_MODEL),
+                        help=f"gerador a avaliar (padrão: LLM_MODEL ou {LEGACY_MODEL}); resultados em results/<modelo>/")
+    parser.add_argument("--judge", default=JUDGE_MODEL,
+                        help=f"juiz do RAGAS (padrão: JUDGE_MODEL ou {DEFAULT_JUDGE}); use outra família que o gerador")
     args = parser.parse_args()
+    _configure(args.model, args.judge)
     {"generate": lambda: stage_generate(args.limit),
      "ragas": lambda: stage_ragas(args.limit),
-     "report": stage_report}[args.stage]()
+     "report": stage_report,
+     "compare": stage_compare}[args.stage]()
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ COMPOSE := docker compose -f infra/docker/docker-compose.yml --env-file .env
         ingest-episodes export-silver medallion \
         embed test-retrieval \
         rag-query \
-        golden-set eval-generate eval-ragas eval-report eval \
+        golden-set eval-generate eval-ragas eval-report eval-compare eval \
         api ui serve
 
 help: ## Exibe esta mensagem de ajuda
@@ -82,20 +82,27 @@ rag-query: ## Consulta o RAG (uso: make rag-query QUERY="..." [FLAGS="--hybrid"]
 # ── Avaliação (RAGAS + métricas de recuperação) ──────────────────────────────
 # Requer o venv isolado: python -m venv .venv-eval && .venv-eval/Scripts/pip install -r requirements.txt -r evaluation/requirements.txt
 EVAL_PY ?= .venv-eval/Scripts/python
+# MODEL = gerador avaliado (resultados em evaluation/results/<modelo>/); JUDGE = juiz do RAGAS
+# (use OUTRA família que o gerador). Ex.: make eval-generate MODEL=qwen3.5:9b
+MODEL ?= qwen2.5:7b
+JUDGE ?= phi4
 
 golden-set: ## Gera o golden set objetivo (24 perguntas) a partir do PostgreSQL
 	PYTHONPATH=. $(EVAL_PY) evaluation/golden_set.py
 
-eval-generate: ## Executa baseline, RAG vetorial e RAG com filtragem sobre o golden set (retomável)
-	PYTHONPATH=. $(EVAL_PY) evaluation/run_eval.py generate
+eval-generate: ## Executa baseline, RAG vetorial e RAG com filtragem sobre o golden set (retomável; MODEL=...)
+	PYTHONPATH=. $(EVAL_PY) evaluation/run_eval.py generate --model $(MODEL)
 
-eval-ragas: ## Calcula as métricas RAGAS com juiz LLM local (retomável)
-	PYTHONPATH=. $(EVAL_PY) evaluation/run_eval.py ragas
+eval-ragas: ## Calcula as métricas RAGAS com juiz LLM local de outra família (retomável; MODEL=... JUDGE=...)
+	PYTHONPATH=. $(EVAL_PY) evaluation/run_eval.py ragas --model $(MODEL) --judge $(JUDGE)
 
-eval-report: ## Agrega resultados (IC bootstrap), gera tabelas e figuras em evaluation/results/
-	PYTHONPATH=. $(EVAL_PY) evaluation/run_eval.py report
+eval-report: ## Agrega resultados (IC bootstrap), gera tabelas e figuras (MODEL=... JUDGE=...)
+	PYTHONPATH=. $(EVAL_PY) evaluation/run_eval.py report --model $(MODEL) --judge $(JUDGE)
 
-eval: golden-set eval-generate eval-ragas eval-report ## Avaliação completa
+eval-compare: ## Compara lado a lado todos os geradores já avaliados (com diferença pareada)
+	PYTHONPATH=. $(EVAL_PY) evaluation/run_eval.py compare
+
+eval: golden-set eval-generate eval-ragas eval-report ## Avaliação completa de um gerador (MODEL=... JUDGE=...)
 
 # ── API + Interface ───────────────────────────────────────────────────────────
 

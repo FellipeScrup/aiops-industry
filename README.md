@@ -167,6 +167,43 @@ anomalias). Só os episódios `not ready` são indexados por padrão
 
 ---
 
+## Avaliação (RAGAS + métricas de recuperação)
+
+O diretório `evaluation/` mede o RAG sobre um **golden set objetivo** de 24 perguntas
+(8 *factual*, 8 *multi-estação*, 8 *causal*). Toda referência vem de dado verificável
+(tabela de episódios, regra mediana + 3·MAD, tabela BPM), não de um LLM. Cada pergunta é
+respondida por três sistemas: `baseline` (LLM sem RAG), `rag_vetorial` e `rag_filtrado`.
+
+| Tipo | Métricas | Depende de juiz LLM? |
+|---|---|---|
+| Recuperação | Hit@k, MRR, Recall@k (ids de episódios-evidência) | Não |
+| Resposta | *key-fact recall* (durações, estações, atividade BPM), veredito de anomalia | Não |
+| RAGAS | Faithfulness, Answer Relevancy, Context Precision, Context Recall, Factual Correctness | **Sim** |
+
+Intervalos de confiança por *bootstrap* (10.000 reamostragens) e comparações pareadas por pergunta.
+
+**Juiz.** O juiz do RAGAS é um modelo local de **terceira família** (`phi4`), diferente dos
+geradores avaliados (Qwen, Gemma), para evitar viés de autopreferência. O código avisa se juiz
+e gerador forem da mesma família. Notas RAGAS só são comparáveis entre geradores avaliados pelo
+**mesmo** juiz. Geração usa `temperature=0`, `seed=42` e *thinking* desligado.
+
+```bash
+# Ambiente isolado (ragas 0.2.10 exige langchain < 0.4)
+python -m venv .venv-eval
+.venv-eval/Scripts/pip install -r requirements.txt -r evaluation/requirements.txt
+
+make eval-generate MODEL=qwen2.5:7b          # retomável; grava em evaluation/results/
+make eval-ragas    MODEL=qwen2.5:7b JUDGE=phi4
+make eval-report   MODEL=qwen2.5:7b JUDGE=phi4
+make eval-compare                            # tabela lado a lado de todos os geradores
+```
+
+Cada gerador grava em `evaluation/results/<modelo>/` (o `qwen2.5:7b`, que já tinha resultados,
+permanece na raiz). **Com GPU AMD no Windows**, use o Ollama instalado no sistema (Vulkan) e
+**não** suba o container `aiops-ollama` (ele disputa a porta 11434).
+
+---
+
 ## Setup
 
 ### Pré-requisitos
@@ -292,6 +329,10 @@ aiops-industry/
 │   ├── generator.py          # geração de resposta (Ollama / Gemini) + guardrails
 │   ├── pipeline.py           # orquestração retrieve → generate
 │   └── query_parser.py       # extração de estação/timestamp da query
+├── evaluation/
+│   ├── golden_set.py         # gera o golden set objetivo (24 perguntas) a partir do PostgreSQL
+│   ├── golden_set.json       # perguntas, referências e episódios-evidência
+│   └── run_eval.py           # generate → ragas → report → compare (resultados em results/)
 ├── api/
 │   └── main.py               # FastAPI: POST /query, GET /health, GET /metadata
 ├── interface/

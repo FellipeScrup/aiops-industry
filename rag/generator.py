@@ -16,6 +16,35 @@ DEFAULT_MODEL: str = os.getenv("LLM_MODEL", "qwen2.5:7b")
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
+# Regra de recusa do prompt. "estrito" é o padrão do projeto (e o usado nos resultados já
+# avaliados). "brando" só recusa quando NENHUM episódio trata do assunto — foi criado porque
+# alguns geradores (qwen3.5, gemma4) recusavam mesmo com a evidência no contexto.
+# Escolha por LLM_GUARDRAIL=estrito|brando. Evite chaves {} nestes textos (usa str.format).
+_GUARDRAIL_ESTRITO = """\
+QUANDO OS EPISÓDIOS CONTÊM DADOS RELEVANTES → use-os para responder diretamente nos três tópicos.
+QUANDO OS EPISÓDIOS NÃO CONTÊM DADOS SUFICIENTES → responda apenas: \
+"Não há informação suficiente nos episódios para responder a essa pergunta."
+Nunca misture as duas situações na mesma resposta."""
+
+_GUARDRAIL_BRANDO = """\
+QUANDO OS EPISÓDIOS TRATAM DA ESTAÇÃO, DO HORÁRIO OU DO ASSUNTO DA PERGUNTA → use-os, mesmo \
+que cubram apenas parte dela, e responda nos três tópicos com o que eles permitem afirmar. \
+Se algo não puder ser confirmado pelos episódios, diga explicitamente o que falta, sem inventar.
+SOMENTE QUANDO NENHUM EPISÓDIO TRATAR DO ASSUNTO PERGUNTADO → responda apenas: \
+"Não há informação suficiente nos episódios para responder a essa pergunta."
+Nunca use a frase de recusa junto com um diagnóstico."""
+
+_GUARDRAILS = {"estrito": _GUARDRAIL_ESTRITO, "brando": _GUARDRAIL_BRANDO}
+
+
+def _guardrail() -> str:
+    """Regra de recusa escolhida por LLM_GUARDRAIL (padrão: estrito)."""
+    name = os.getenv("LLM_GUARDRAIL", "estrito").strip().lower() or "estrito"
+    if name not in _GUARDRAILS:
+        raise ValueError(f"LLM_GUARDRAIL inválido: {name!r}. Use: {', '.join(_GUARDRAILS)}.")
+    return _GUARDRAILS[name]
+
+
 _PROMPT_TEMPLATE = """\
 Você é um assistente especializado em manutenção de fábricas inteligentes com automação industrial.
 
@@ -32,10 +61,7 @@ sem insumo. Mencione o impacto na linha de produção na Ação corretiva.
 7. DURAÇÃO E ANOMALIA: Considere especialmente a duração de cada episódio e a flag \
 [ANOMALIA DE DURAÇÃO] quando presente — esses são os principais sinais de falha.
 
-QUANDO OS EPISÓDIOS CONTÊM DADOS RELEVANTES → use-os para responder diretamente nos três tópicos.
-QUANDO OS EPISÓDIOS NÃO CONTÊM DADOS SUFICIENTES → responda apenas: \
-"Não há informação suficiente nos episódios para responder a essa pergunta."
-Nunca misture as duas situações na mesma resposta.
+{guardrail}
 
 EPISÓDIOS DOS LOGS (fábrica inteligente — 7 estações: MM_1, EC_1, SM_1, HBW_1, OV_1, VGR_1, WT_1):
 {context_str}
@@ -45,6 +71,21 @@ PERGUNTA DO TÉCNICO:
 
 Resposta (baseada EXCLUSIVAMENTE nos episódios acima):
 1. Diagnóstico: o que os episódios indicam sobre o comportamento do sistema
+2. Causa provável do problema ou comportamento observado
+3. Ação corretiva recomendada"""
+
+
+# Prompt do grupo de controle "LLM sem RAG" (mesmo texto de evaluation/run_eval.py: _BASELINE_PROMPT).
+# Usado pela interface para demonstrar ao vivo a diferença entre responder com e sem evidências.
+_BASELINE_PROMPT = """\
+Você é um assistente especializado em manutenção de fábricas inteligentes com automação industrial.
+Responda sempre em português, usando os três tópicos abaixo.
+
+PERGUNTA DO TÉCNICO:
+{query}
+
+Resposta:
+1. Diagnóstico: o que a situação indica sobre o comportamento do sistema
 2. Causa provável do problema ou comportamento observado
 3. Ação corretiva recomendada"""
 
@@ -202,6 +243,15 @@ def _generate_gemini(prompt: str) -> tuple[str, dict]:
             raise RuntimeError(f"Erro na API do Gemini: {error_msg}") from exc
 
 
+def generate_baseline(query: str, model: str = DEFAULT_MODEL) -> tuple[str, dict]:
+    """LLM puro, sem episódios recuperados (condição "sem RAG" da avaliação)."""
+    prompt = _BASELINE_PROMPT.format(query=query)
+    logger.info("Gerando resposta SEM RAG com %s...", model)
+    if "gemini" in model.lower():
+        return _generate_gemini(prompt)
+    return _generate_ollama(prompt, model)
+
+
 def generate(
     query: str,
     context: list[dict],
@@ -219,7 +269,7 @@ def generate(
         prompt_tokens, completion_tokens, total_tokens.
     """
     context_str = _format_context(context)
-    prompt = _PROMPT_TEMPLATE.format(context_str=context_str, query=query)
+    prompt = _PROMPT_TEMPLATE.format(context_str=context_str, query=query, guardrail=_guardrail())
 
     logger.info("Gerando resposta com %s...", model)
 

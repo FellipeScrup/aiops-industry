@@ -1,0 +1,132 @@
+{
+ "judge": "phi4",
+ "k": 10,
+ "repeats": 2,
+ "nota": "medição 0 = guardada na avaliação original; as demais = repetições com a mesma config (temperature=0, seed=42)",
+ "identicas": 8,
+ "n_validas": 10,
+ "amplitude_media": 0.015931372549019607,
+ "amplitude_max": 0.11764705882352944,
+ "linhas": [
+  {
+   "amostra": "A02",
+   "run": "qwen2.5:7b[estrito]",
+   "id": "cau-07",
+   "system": "rag_vetorial",
+   "medicoes": [
+    0.1875,
+    0.1875,
+    0.1875
+   ],
+   "amplitude": 0.0
+  },
+  {
+   "amostra": "A45",
+   "run": "qwen2.5:7b[estrito]",
+   "id": "cau-02",
+   "system": "rag_vetorial",
+   "medicoes": [
+    0.2631578947368421,
+    0.2631578947368421,
+    0.2631578947368421
+   ],
+   "amplitude": 0.0
+  },
+  {
+   "amostra": "A22",
+   "run": "qwen2.5:7b[estrito]",
+   "id": "cro-02",
+   "system": "rag_filtrado",
+   "medicoes": [
+    0.3157894736842105,
+    0.3157894736842105,
+    0.3157894736842105
+   ],
+   "amplitude": 0.0
+  },
+  {
+   "amostra": "A06",
+   "run": "qwen3.5:9b[estrito]",
+   "id": "cau-01",
+   "system": "rag_vetorial",
+   "medicoes": [
+    0.4166666666666667,
+    0.4166666666666667,
+    0.4166666666666667
+   ],
+   "amplitude": 0.0
+  },
+  {
+   "amostra": "A01",
+   "run": "qwen2.5:7b[estrito]",
+   "id": "cau-05",
+   "system": "rag_vetorial",
+   "medicoes": [
+    0.4666666666666667,
+    0.4666666666666667,
+    0.4666666666666667
+   ],
+   "amplitude": 0.0
+  },
+  {
+   "amostra": "A43",
+   "run": "gemma4:e4b[estrito]",
+   "id": "cro-03",
+   "system": "rag_filtrado",
+   "medicoes": [
+    0.5882352941176471,
+    0.5882352941176471,
+    0.7058823529411765
+   ],
+   "amplitude": 0.11764705882352944
+  },
+  {
+   "amostra": "A03",
+   "run": "qwen3.5:9b[estrito]",
+   "id": "fac-02",
+   "system": "rag_filtrado",
+   "medicoes": [
+    0.6666666666666666,
+    0.6666666666666666,
+    0.625
+   ],
+   "amplitude": 0.04166666666666663
+  },
+  {
+   "amostra": "A41",
+   "run": "gemma4:e4b[estrito]",
+   "id": "cau-01",
+   "system": "rag_vetorial",
+   "medicoes": [
+    0.7,
+    0.7,
+    0.7
+   ],
+   "amplitude": 0.0
+  },
+  {
+   "amostra": "A24",
+   "run": "gemma4:e4b[estrito]",
+   "id": "cau-05",
+   "system": "rag_vetorial",
+   "medicoes": [
+    0.75,
+    0.75,
+    0.75
+   ],
+   "amplitude": 0.0
+  },
+  {
+   "amostra": "A37",
+   "run": "gemma4:e4b[estrito]",
+   "id": "cro-01",
+   "system": "rag_vetorial",
+   "medicoes": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "amplitude": 0.0
+  }
+ ]
+}

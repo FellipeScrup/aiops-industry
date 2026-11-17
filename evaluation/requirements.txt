@@ -1,5 +1,5 @@
 # Ambiente ISOLADO para a avaliação (python -m venv .venv-eval).
-# Instale primeiro as dependências do projeto (requirements.txt da raiz) e depois estas.
+# Instale primeiro as dependências do projeto (ingestion/ e rag/ requirements.txt) e depois estas.
 # As versões do langchain ficam < 0.4 porque o ragas 0.2.10 importa módulos removidos nas versões novas.
 ragas==0.2.10
 langchain>=0.3,<0.4

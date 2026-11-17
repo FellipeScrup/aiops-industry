@@ -1,0 +1,35 @@
+ROTULAGEM DE FIDELIDADE (faithfulness) — instruções
+====================================================
+Abra planilha_rotulagem.csv no Excel (separador ';', UTF-8). Preencha SÓ a coluna 'rotulo'
+(e, se quiser, 'comentario'). NÃO abra gabarito_juiz.csv antes de terminar (ele tem a nota do juiz).
+
+Para cada linha, leia a RESPOSTA e verifique cada afirmação factual dela contra o CONTEXTO RECUPERADO
+mostrado na própria linha. Use APENAS o contexto — nunca conhecimento externo nem a sua memória do dataset.
+
+  2 = todas as afirmações factuais estão sustentadas pelo contexto
+  1 = há pelo menos uma afirmação sem suporte ou contradita, mas a maioria está sustentada
+  0 = a maioria das afirmações NÃO está sustentada (ou contradiz o contexto)
+  R = a resposta só recusa/declina ("não há informação suficiente...") e não afirma fatos
+      (recusas óbvias já foram retiradas da planilha; use R só se sobrar alguma)
+
+O que conta como AFIRMAÇÃO a verificar (o RAGAS faz o mesmo ao decompor a resposta em afirmações):
+  - fatos: durações, estações, tarefas, sub-tarefas, horários, estado "not ready", anomalia de duração;
+  - CAUSAS PROVÁVEIS e AÇÕES CORRETIVAS recomendadas: se o contexto não as traz nem as implica,
+    contam como afirmação SEM suporte (os logs não contêm ações corretivas; recomendar uma é inferir
+    além do contexto);
+  - NÃO contam: ressalvas do tipo "não há informação sobre a causa/ação" (isso é reconhecer um limite).
+
+Dicas:
+  - Números (durações), estações, tarefas e sub-tarefas citados devem aparecer no contexto.
+  - Se estiver em dúvida entre dois rótulos, escolha o mais baixo e anote em 'comentario'.
+Não precisa de pressa, mas evite consultar as respostas do mesmo sorteio em outra janela.
+
+PASSO A PASSO RÁPIDO (cerca de 2 minutos por linha; você NÃO precisa entender de fábrica)
+-----------------------------------------------------------------------------------------
+Para cada linha, pegue os números, estações, tarefas e sub-tarefas citados na RESPOSTA e procure cada um no
+CONTEXTO (Ctrl+F no Excel funciona). Conte:
+  - tudo o que a resposta afirma está no contexto            -> rótulo 2
+  - a maior parte está, mas há algo inventado ou sem apoio   -> rótulo 1
+  - a maior parte NÃO está no contexto ou o contradiz        -> rótulo 0
+Lembre: "causa provável" e "ação corretiva" só valem se o contexto as trouxer ou implicar; se são sugestões gerais
+(ex.: "verifique os sensores"), contam como afirmação sem apoio.

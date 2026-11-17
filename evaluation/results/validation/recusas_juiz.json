@@ -1,0 +1,18 @@
+{
+ "n_recusas_total": 70,
+ "faithfulness_juiz": {
+  "zero": 43,
+  "intermediaria": 20,
+  "um": 7,
+  "media": 0.2994897959183674
+ },
+ "n_nao_recusa_disponiveis": 74,
+ "cotas": {
+  "gemma4:e4b[estrito] | rag_filtrado": 10,
+  "gemma4:e4b[estrito] | rag_vetorial": 10,
+  "qwen2.5:7b[estrito] | rag_filtrado": 10,
+  "qwen2.5:7b[estrito] | rag_vetorial": 10,
+  "qwen3.5:9b[estrito] | rag_filtrado": 6,
+  "qwen3.5:9b[estrito] | rag_vetorial": 2
+ }
+}

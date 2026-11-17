@@ -67,5 +67,21 @@ dmypy.json
 .pytype/
 .ruff_cache/
 
-# Ambiente isolado da avaliaÃ§Ã£o RAGAS
+# Ambiente isolado da avaliação RAGAS
 .venv-eval/
+
+# Documentação / apresentação / material de defesa (fora do código)
+documentação/
+_tmp_pres/
+sprints/
+tcc_figuras/
+transcricao_whatsapp*.txt
+*.pptx
+*.docx
+
+# Dataset auxiliar local (não versionar)
+data/new_dataset/
+
+# Cache / tooling local
+.claude/
+__pycache__/

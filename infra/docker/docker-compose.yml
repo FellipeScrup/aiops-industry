@@ -141,12 +141,13 @@ services:
   # Suporte a GPU:
   #   - HOST com NVIDIA (Fedora/Ubuntu com nvidia-container-toolkit instalado):
   #     o bloco `deploy.resources` abaixo passa a GPU para o container automaticamente.
-  #   - HOST com AMD/Intel/sem GPU: comente o bloco `deploy:` E use o Ollama nativo
-  #     do SO (Windows/macOS/Linux). Pare este serviço com `docker compose stop ollama`
-  #     antes de subir o Ollama nativo, para evitar conflito na porta 11434.
+  #   - HOST com AMD/Intel/sem GPU: use o Ollama nativo do SO (Windows/macOS/Linux).
+  # O serviço fica no profile "ollama-docker" e não sobe com `make up`; para usá-lo:
+  #   docker compose -f infra/docker/docker-compose.yml --env-file .env --profile ollama-docker up -d
   ollama:
     image: ollama/ollama:latest
     container_name: aiops-ollama
+    profiles: ["ollama-docker"]
     restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama

@@ -2,7 +2,8 @@
 
 Determinístico, sem LLM. Reconhece:
 - estações citadas (lista 7 estações fixas da Smart Factory)
-- timestamp no formato ISO 'YYYY-MM-DD HH:MM:SS[.ffffff]'
+- timestamp ISO com segundos: 'YYYY-MM-DD HH:MM:SS[.ffffff]' (janela ±5 s)
+- timestamp só com minuto: 'YYYY-MM-DD HH:MM' (cobre o minuto inteiro)
 
 Saída usada pelo retriever híbrido para montar `expr` do Milvus
 (filtro escalar antes da vector search).
@@ -19,8 +20,9 @@ STATIONS: tuple[str, ...] = (
 )
 
 _STATION_RE = re.compile(r"\b(" + "|".join(STATIONS) + r")\b")
+# Com segundos (preferido) OU só hora:minuto (uso natural do técnico).
 _TIMESTAMP_RE = re.compile(
-    r"\b(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?)\b"
+    r"\b(\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)\b"
 )
 
 # Mesmo formato que pandas usa ao serializar pandas.Timestamp → str:
@@ -38,7 +40,10 @@ class QueryMetadata:
 
 
 def _normalize_ts(raw: str) -> str:
-    """Garante 6 dígitos de microssegundos (formato do Milvus)."""
+    """Garante HH:MM:SS com 6 dígitos de microssegundos (formato do Milvus)."""
+    # "YYYY-MM-DD HH:MM" → completa com :00
+    if raw.count(":") == 1:
+        raw = raw + ":00"
     if "." not in raw:
         raw = raw + ".000000"
     else:
@@ -53,7 +58,8 @@ def parse_query(query: str, window_seconds: int = 5) -> QueryMetadata:
 
     Args:
         query: texto livre da pergunta.
-        window_seconds: meia-janela ao redor do timestamp (default ±5s).
+        window_seconds: meia-janela ao redor do timestamp com segundos (default ±5s).
+            Se a pergunta trouxer só HH:MM, a janela cobre o minuto inteiro.
 
     Returns:
         QueryMetadata. Campos None/[] quando nada é detectado.
@@ -70,15 +76,22 @@ def parse_query(query: str, window_seconds: int = 5) -> QueryMetadata:
     if not ts_match:
         return QueryMetadata(stations=stations)
 
-    ts_norm = _normalize_ts(ts_match.group(1))
+    raw = ts_match.group(1)
+    minute_only = raw.count(":") == 1
+    ts_norm = _normalize_ts(raw)
     try:
         dt = datetime.strptime(ts_norm, _TS_FMT)
     except ValueError:
         return QueryMetadata(stations=stations)
 
-    delta = timedelta(seconds=window_seconds)
-    lo = (dt - delta).strftime(_TS_FMT)
-    hi = (dt + delta).strftime(_TS_FMT)
+    if minute_only:
+        # "10:09" → todo o minuto 10:09:00 .. 10:09:59.999999
+        lo = dt.strftime(_TS_FMT)
+        hi = (dt + timedelta(minutes=1) - timedelta(microseconds=1)).strftime(_TS_FMT)
+    else:
+        delta = timedelta(seconds=window_seconds)
+        lo = (dt - delta).strftime(_TS_FMT)
+        hi = (dt + delta).strftime(_TS_FMT)
 
     return QueryMetadata(
         stations=stations,

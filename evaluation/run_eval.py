@@ -64,6 +64,15 @@ GOLDEN = ROOT / "golden_set.json"
 # que já foi gerado (nem as figuras já usadas no texto do TCC) precisa ser movido.
 LEGACY_MODEL = "qwen2.5:7b"
 GEN_MODEL = LEGACY_MODEL
+# Variante da regra de recusa do prompt do RAG (ver rag/generator.py). "estrito" = padrão do
+# projeto, usado em todos os resultados já avaliados; as demais vão para results/<modelo>__<prompt>/.
+PROMPTS = ("estrito", "brando")
+DEFAULT_PROMPT = "estrito"
+PROMPT = DEFAULT_PROMPT
+# Reranking lexical (BM25 + RRF) sobre os candidatos do retriever (ver rag/lexical.py); "off" = padrão.
+RERANKS = ("off", "bm25")
+DEFAULT_RERANK = "off"
+RERANK = DEFAULT_RERANK
 RESULTS = BASE_RESULTS
 GENERATIONS = RESULTS / "generations.jsonl"
 RAGAS_SCORES = RESULTS / "ragas_scores.jsonl"
@@ -110,11 +119,18 @@ def _family(model: str) -> str:
     return m.group(0) if m else model.lower()
 
 
-def _configure(model: str, judge: str) -> None:
-    """Define gerador, juiz e as pastas de saída (uma por gerador)."""
-    global GEN_MODEL, JUDGE_MODEL, RESULTS, GENERATIONS, RAGAS_SCORES
-    GEN_MODEL, JUDGE_MODEL = model, judge
-    RESULTS = BASE_RESULTS if model == LEGACY_MODEL else BASE_RESULTS / _slug(model)
+def _configure(model: str, judge: str, prompt: str = DEFAULT_PROMPT, rerank: str = DEFAULT_RERANK) -> None:
+    """Define gerador, juiz, prompt, reranking e as pastas de saída (uma por gerador+prompt+rerank)."""
+    global GEN_MODEL, JUDGE_MODEL, PROMPT, RERANK, RESULTS, GENERATIONS, RAGAS_SCORES
+    GEN_MODEL, JUDGE_MODEL, PROMPT, RERANK = model, judge, prompt, rerank
+    os.environ["LLM_GUARDRAIL"] = prompt  # lido por rag.generator._guardrail()
+    os.environ["RAG_RERANK"] = "" if rerank == DEFAULT_RERANK else rerank  # lido por rag.retriever
+    if model == LEGACY_MODEL and prompt == DEFAULT_PROMPT and rerank == DEFAULT_RERANK:
+        RESULTS = BASE_RESULTS
+    else:
+        suffix = ("" if prompt == DEFAULT_PROMPT else f"__{prompt}") + \
+                 ("" if rerank == DEFAULT_RERANK else f"__{rerank}")
+        RESULTS = BASE_RESULTS / f"{_slug(model)}{suffix}"
     GENERATIONS = RESULTS / "generations.jsonl"
     RAGAS_SCORES = RESULTS / "ragas_scores.jsonl"
     if _family(model) == _family(judge):
@@ -156,11 +172,15 @@ def _context_text(hit: dict) -> str:
 
 # ── etapa 1: geração ────────────────────────────────────────────────────────
 
-def stage_generate(limit: int | None) -> None:
+def stage_generate(limit: int | None, sample: int | None = None) -> None:
     from rag.generator import _generate_ollama  # noqa: PLC0415
     from rag.pipeline import query as rag_query  # noqa: PLC0415
 
-    golden = _load_golden()[:limit] if limit else _load_golden()
+    golden = _load_golden()
+    if sample:  # N perguntas espaçadas pelo golden set (cobre os 3 tiers, que estão em blocos)
+        golden = golden[::max(1, len(golden) // sample)][:sample]
+    elif limit:
+        golden = golden[:limit]
     done = {(r["id"], r["system"]) for r in _read_jsonl(GENERATIONS)}
     logger.info("Gerando %d perguntas x %d sistemas (%d já feitos) com %s -> %s",
                 len(golden), len(SYSTEMS), len(done), GEN_MODEL, RESULTS)
@@ -180,7 +200,7 @@ def stage_generate(limit: int | None) -> None:
             latency = time.perf_counter() - t0
 
             _append_jsonl(GENERATIONS, {
-                "model": GEN_MODEL,
+                "model": GEN_MODEL, "prompt": PROMPT, "rerank": RERANK,
                 "id": item["id"], "tier": item["tier"], "subtype": item["subtype"], "system": system,
                 "question": item["question"], "reference": item["reference"], "answer": answer,
                 "retrieved_ids": [h["event_id"] for h in hits],
@@ -392,8 +412,8 @@ def stage_report() -> None:
         rows.append(row)
 
     metric_cols = ["hit_at_k", "mrr", "recall_at_k", "key_fact_recall", "verdict_correct", *RAGAS_COLS]
-    summary: dict = {"n_questions": len(golden), "top_k": TOP_K, "generator": GEN_MODEL, "judge": JUDGE_MODEL,
-                     "bootstrap": {"n": BOOTSTRAP_N, "seed": BOOTSTRAP_SEED},
+    summary: dict = {"n_questions": len(golden), "top_k": TOP_K, "generator": GEN_MODEL, "prompt": PROMPT, "rerank": RERANK,
+                     "judge": JUDGE_MODEL, "bootstrap": {"n": BOOTSTRAP_N, "seed": BOOTSTRAP_SEED},
                      "overall": {}, "by_tier": {}, "paired": {}, "cost": {}, "ragas_nan": {}}
 
     def vals(system: str, col: str, tier: str | None = None) -> dict[str, float]:
@@ -557,18 +577,23 @@ def stage_compare() -> None:
         sf, pf = d / "summary.json", d / "per_question.json"
         if sf.exists() and pf.exists():
             s = json.loads(sf.read_text(encoding="utf-8"))
-            runs.append((s.get("generator", d.name), s, json.loads(pf.read_text(encoding="utf-8"))))
+            label = s.get("generator", d.name)
+            if s.get("prompt", DEFAULT_PROMPT) != DEFAULT_PROMPT:
+                label += f"[{s['prompt']}]"
+            if s.get("rerank", DEFAULT_RERANK) != DEFAULT_RERANK:
+                label += f"+{s['rerank']}"
+            runs.append((label, s, json.loads(pf.read_text(encoding="utf-8"))))
     if not runs:
         print("Nenhum resultado agregado. Rode 'report' para cada gerador antes de comparar.")
         return
 
     for system in ("rag_filtrado", "rag_vetorial"):
         print(f"\n== {SYSTEM_LABEL[system]} (média [IC95%]; juiz diferente => notas RAGAS não comparáveis) ==")
-        print(f"{'gerador':16} {'juiz':8} " + " ".join(f"{lbl:>20}" for _, lbl in COMPARE_COLS)
+        print(f"{'gerador':20} {'juiz':8} " + " ".join(f"{lbl:>20}" for _, lbl in COMPARE_COLS)
               + f" {'lat(s)':>7} {'tokens':>7}")
         for name, s, _ in runs:
             o, c = s["overall"][system], s["cost"][system]
-            print(f"{name:16} {s.get('judge', '?'):8} "
+            print(f"{name:20} {s.get('judge', '?'):8} "
                   + " ".join(f"{_fmt(o.get(col)):>20}" for col, _ in COMPARE_COLS)
                   + f" {c['latency_s_mean']:7.1f} {c['total_tokens_mean']:7.0f}")
 
@@ -583,9 +608,180 @@ def stage_compare() -> None:
                 b = {r["id"]: r.get(col) for r in ref_rows if r["system"] == system}
                 r_ = _paired_diff(a, b, rng)
                 if r_.get("n"):
-                    print(f"{name:16} {system:13} {col:16} Δ={r_['diff']:+.3f} "
+                    print(f"{name:20} {system:13} {col:16} Δ={r_['diff']:+.3f} "
                           f"[{r_['ci_low']:+.3f}; {r_['ci_high']:+.3f}] n={r_['n']}")
     print("\nObs.: com 24 perguntas, IC que cruza 0 => diferença não distinguível de ruído.")
+
+
+# Declínio de resposta, em qualquer redação ("Não há informação suficiente...", "Não há episódios que
+# mencionem...", "Não é possível determinar...", "não foi registrado"). Detectar só a frase-padrão do
+# prompt estrito subestima as recusas do prompt brando (que explica o que falta com outras palavras).
+_DECLINE_RE = re.compile(
+    r"n[ãa]o h[áa]\b[^.\n]{0,80}?(?:informa|epis[óo]d|registr|dado|evid[êe]nc)"
+    r"|n[ãa]o (?:[ée] poss[íi]vel|foi poss[íi]vel|existe[m]?|foi registrad|consta)"
+    r"|(?:sem|nenhum) (?:epis[óo]dio|registro)",
+    re.IGNORECASE,
+)
+_DECIMAL_RE = re.compile(r"(?<![\d.])\d+\.\d+(?!\d)")
+
+
+def classify_answer(answer: str, key_fact: float) -> str:
+    """'recusa_total' | 'ressalva_parcial' | 'resposta' — independente da redação da recusa.
+
+    Critério (auditado manualmente nos resultados): é RECUSA TOTAL quando o declínio aparece na abertura
+    da resposta (primeiros 250 caracteres) e a resposta não traz nenhum fato-chave da referência.
+    Declínio em qualquer outro ponto (ex.: só na seção "Ação corretiva", ou "Causa: não há informação")
+    é RESSALVA PARCIAL — o modelo respondeu, e se errou é erro de conteúdo (key_fact_recall), não recusa.
+    """
+    text = answer.replace(",", ".")
+    if not _DECLINE_RE.search(text):
+        return "resposta"
+    if _DECLINE_RE.search(text[:250]) and not (key_fact > 0):  # NaN > 0 é False -> NaN conta como sem fatos
+        return "recusa_total"
+    return "ressalva_parcial"
+
+
+def ungrounded_numbers(answer: str, question: str, contexts: list[str]) -> int:
+    """Nº de valores decimais citados na resposta que não aparecem na pergunta nem nos episódios
+    recuperados (proxy determinístico de alucinação numérica; durações derivadas por subtração, p.ex.
+    "2.8s acima da mediana", podem gerar falsos positivos — reportar como indicador, não como verdade)."""
+    allowed = {float(x) for x in _DECIMAL_RE.findall((question + " " + " ".join(contexts)).replace(",", "."))}
+    cited = {float(x) for x in _DECIMAL_RE.findall(answer.replace(",", "."))}
+    return sum(1 for v in cited if v not in allowed)
+
+
+def stage_refusals() -> None:
+    """Comportamento de recusa e ancoragem por gerador+prompt — só lê generations.jsonl (sem juiz/GPU).
+
+    Cruza a EVIDÊNCIA NO CONTEXTO (hit@k) com o COMPORTAMENTO da resposta:
+      - recusa indevida   : evidência no contexto, mas recusa total (sem fatos-chave);
+      - ressalva parcial  : evidência no contexto, respondeu e só ressalvou uma seção (não é erro);
+      - recusa correta    : sem evidência no contexto e recusou (comportamento desejado);
+      - resp. s/ evidência: sem evidência no contexto e NÃO recusou (risco de alucinação);
+      - c/ nº inventado   : % das respostas (todas) citando decimal que não está no contexto/pergunta.
+    Compara só as perguntas presentes em TODAS as execuções, para que rodadas parciais (--sample)
+    não distorçam a comparação.
+    """
+    golden = {g["id"]: g for g in _load_golden()}
+    dirs = [BASE_RESULTS] + sorted(p for p in BASE_RESULTS.iterdir() if p.is_dir() and p.name != "figuras")
+    runs: list[tuple[str, dict[str, dict[str, dict]]]] = []  # rótulo -> sistema -> id -> geração
+    for d in dirs:
+        gens = [g for g in _read_jsonl(d / "generations.jsonl") if g["system"] != "baseline"]
+        if not gens:
+            continue
+        model_name = gens[0].get("model", LEGACY_MODEL if d == BASE_RESULTS else d.name)
+        label = f"{model_name}[{gens[0].get('prompt', DEFAULT_PROMPT)}]"
+        if gens[0].get("rerank", DEFAULT_RERANK) != DEFAULT_RERANK:
+            label += f"+{gens[0]['rerank']}"
+        by_sys: dict[str, dict[str, dict]] = {}
+        for g in gens:
+            by_sys.setdefault(g["system"], {})[g["id"]] = g
+        runs.append((label, by_sys))
+    if not runs:
+        print("Nenhuma geração encontrada. Rode 'generate' antes.")
+        return
+
+    def pct(k: int, n: int) -> str:
+        return f"{k:2d}/{n:<2d} ({(100 * k / n) if n else 0:3.0f}%)"
+
+    for system in ("rag_filtrado", "rag_vetorial"):
+        common = set.intersection(*[set(r[1].get(system, {})) for r in runs])
+        print(f"\n== {SYSTEM_LABEL[system]} — {len(common)} perguntas em comum entre as execuções ==")
+        if not common:
+            print("  (nenhuma pergunta em comum; gere as mesmas perguntas em todas as execuções)")
+            continue
+        print(f"{'gerador[prompt]':24} {'recusa indevida':>16} {'ressalva parcial':>17} {'recusa correta':>16} "
+              f"{'resp. s/ evid.':>15} {'c/ nº inventado':>16} {'FatosChave':>10}")
+        for label, by_sys in runs:
+            ev = n_undue = n_partial = n_correct = n_noev_ans = n_invent = 0
+            kfs: list[float] = []
+            for qid in sorted(common):
+                g, gold = by_sys[system][qid], golden[qid]
+                hit = retrieval_metrics(g["retrieved_ids"], gold["evidence_episode_ids"],
+                                        gold["evidence_mode"])["hit_at_k"] > 0
+                kf = key_fact_recall(g["answer"], g["reference"], g["question"])
+                kind = classify_answer(g["answer"], kf)
+                ev += hit
+                n_undue += hit and kind == "recusa_total"
+                n_partial += hit and kind == "ressalva_parcial"
+                n_correct += (not hit) and kind == "recusa_total"
+                n_noev_ans += (not hit) and kind != "recusa_total"
+                n_invent += ungrounded_numbers(g["answer"], g["question"], g["retrieved_contexts"]) > 0
+                if not math.isnan(kf):
+                    kfs.append(kf)
+            n, n_noev = len(common), len(common) - ev
+            print(f"{label:24} {pct(n_undue, ev):>16} {pct(n_partial, ev):>17} {pct(n_correct, n_noev):>16} "
+                  f"{pct(n_noev_ans, n_noev):>15} {pct(n_invent, n):>16} {np.mean(kfs):10.2f}")
+    print("\nLeitura: 'recusa indevida' (base = perguntas com evidência no contexto) deve CAIR no prompt brando;\n"
+          "'resp. s/ evid.' (base = perguntas sem evidência no contexto) e 'c/ nº inventado' não devem SUBIR —\n"
+          "se subirem, o prompt brando trocou recusa indevida por alucinação.")
+
+
+def stage_retrieval() -> None:
+    """Ablação da recuperação (determinística: sem LLM, sem juiz, ~1 min): denso vs denso+BM25 (RRF).
+
+    Compara, no golden set, {vetorial, filtrado} x {sem, com reranking lexical BM25}. É independente do
+    gerador. Hiperparâmetros (RRF k=60, BM25 k1=1.5/b=0.75) são os padrões da literatura, fixados antes
+    de ver o resultado — o golden set NÃO é usado para ajustá-los. Salva results/retrieval_ablation.json.
+    """
+    from rag.retriever import retrieve, retrieve_hybrid  # noqa: PLC0415
+
+    golden = _load_golden()
+    configs = [("vetorial", retrieve, ""), ("vetorial+BM25", retrieve, "bm25"),
+               ("filtrado", retrieve_hybrid, ""), ("filtrado+BM25", retrieve_hybrid, "bm25")]
+    per: dict[str, dict[str, dict]] = {}
+    previous = os.environ.get("RAG_RERANK")
+    try:
+        for name, fn, mode in configs:
+            os.environ["RAG_RERANK"] = mode
+            per[name] = {}
+            for item in golden:
+                hits = fn(item["question"], top_k=TOP_K)
+                per[name][item["id"]] = {
+                    **retrieval_metrics([h["event_id"] for h in hits], item["evidence_episode_ids"],
+                                        item["evidence_mode"]),
+                    "tier": item["tier"], "retrieved_ids": [h["event_id"] for h in hits]}
+    finally:
+        if previous is None:
+            os.environ.pop("RAG_RERANK", None)
+        else:
+            os.environ["RAG_RERANK"] = previous
+
+    cols = ("hit_at_k", "mrr", "recall_at_k")
+    head = f"{'configuração':16} {'Hit@' + str(TOP_K):>8} {'MRR':>8} {'Recall@' + str(TOP_K):>10}"
+    print(f"\n== Recuperação — {len(golden)} perguntas (média) ==\n{head}")
+    for name, _, _ in configs:
+        print(f"{name:16} " + " ".join(f"{np.mean([r[c] for r in per[name].values()]):{w}.3f}"
+                                       for c, w in zip(cols, (8, 8, 10))))
+    print("\n== Por tier (Hit@k / MRR / Recall@k) ==")
+    for tier in TIERS:
+        for name, _, _ in configs:
+            sel = [r for r in per[name].values() if r["tier"] == tier]
+            print(f"{TIER_LABEL[tier]:15} {name:16} " + " / ".join(f"{np.mean([r[c] for r in sel]):.3f}"
+                                                                 for c in cols))
+
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    print("\n== Efeito do BM25 (Δ pareado por pergunta, IC95% bootstrap) ==")
+    for base in ("vetorial", "filtrado"):
+        for c in ("mrr", "recall_at_k"):
+            r_ = _paired_diff({k: v[c] for k, v in per[base + "+BM25"].items()},
+                              {k: v[c] for k, v in per[base].items()}, rng)
+            print(f"{base:9} {c:12} Δ={r_['diff']:+.3f} [{r_['ci_low']:+.3f}; {r_['ci_high']:+.3f}] n={r_['n']}")
+    print("\n== Perguntas cujo ranking mudou com o BM25 (MRR antes -> depois) ==")
+    changed = False
+    for base in ("vetorial", "filtrado"):
+        for qid, before in per[base].items():
+            after = per[base + "+BM25"][qid]
+            if abs(after["mrr"] - before["mrr"]) > 1e-9 or after["hit_at_k"] != before["hit_at_k"]:
+                changed = True
+                print(f"{base:9} {qid}: MRR {before['mrr']:.2f} -> {after['mrr']:.2f} | "
+                      f"Hit {before['hit_at_k']:.0f} -> {after['hit_at_k']:.0f}")
+    if not changed:
+        print("(nenhuma pergunta mudou)")
+
+    out = BASE_RESULTS / "retrieval_ablation.json"
+    out.write_text(json.dumps(per, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"\nSalvo em {out}")
 
 
 def main() -> None:
@@ -593,18 +789,29 @@ def main() -> None:
     for noisy in ("httpx", "urllib3", "pymilvus", "rag.retriever", "rag.generator", "rag.pipeline"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("stage", choices=["generate", "ragas", "report", "compare"])
+    parser.add_argument("stage", choices=["generate", "ragas", "report", "compare", "refusals", "retrieval"])
     parser.add_argument("--limit", type=int, default=None, help="usa só as N primeiras perguntas (smoke test)")
+    parser.add_argument("--sample", type=int, default=None,
+                        help="só no 'generate': N perguntas espaçadas pelo golden set (cobre os 3 tiers)")
     parser.add_argument("--model", default=os.getenv("LLM_MODEL", LEGACY_MODEL),
                         help=f"gerador a avaliar (padrão: LLM_MODEL ou {LEGACY_MODEL}); resultados em results/<modelo>/")
     parser.add_argument("--judge", default=JUDGE_MODEL,
                         help=f"juiz do RAGAS (padrão: JUDGE_MODEL ou {DEFAULT_JUDGE}); use outra família que o gerador")
+    parser.add_argument("--prompt", choices=PROMPTS, default=DEFAULT_PROMPT,
+                        help="regra de recusa do prompt do RAG (padrão: estrito = prompt dos resultados já "
+                             "avaliados; brando = só recusa se NENHUM episódio tratar do assunto). "
+                             "Resultados em results/<modelo>__<prompt>/")
+    parser.add_argument("--rerank", choices=RERANKS, default=DEFAULT_RERANK,
+                        help="reranking lexical BM25+RRF dos candidatos do retriever (padrão: off). "
+                             "Resultados em results/<modelo>[__prompt]__bm25/")
     args = parser.parse_args()
-    _configure(args.model, args.judge)
-    {"generate": lambda: stage_generate(args.limit),
+    _configure(args.model, args.judge, args.prompt, args.rerank)
+    {"generate": lambda: stage_generate(args.limit, args.sample),
      "ragas": lambda: stage_ragas(args.limit),
      "report": stage_report,
-     "compare": stage_compare}[args.stage]()
+     "compare": stage_compare,
+     "refusals": stage_refusals,
+     "retrieval": stage_retrieval}[args.stage]()
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -39,6 +40,9 @@ class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1)
     top_k: int = Field(default=5, ge=1, le=20)
     model: str = Field(default="qwen2.5:7b")
+    # "filtrada" = RAG com filtragem (proposta do TCC); "vetorial" = RAG vetorial puro;
+    # "sem_rag" = LLM sem episódios (grupo de controle).
+    mode: Literal["sem_rag", "vetorial", "filtrada"] = Field(default="filtrada")
 
 
 class QueryResponse(BaseModel):
@@ -49,6 +53,9 @@ class QueryResponse(BaseModel):
     processing_time_s: float
     model_used: str
     token_usage: dict
+    mode: str = "filtrada"
+    # Estações e janela temporal que o parser da pergunta detectou (base do filtro escalar).
+    parsed: dict = Field(default_factory=dict)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -56,17 +63,17 @@ class QueryResponse(BaseModel):
 @app.post("/query", response_model=QueryResponse)
 def query_endpoint(body: QueryRequest) -> QueryResponse:
     logger.info(
-        "POST /query — question=%r top_k=%d model=%s",
-        body.question, body.top_k, body.model,
+        "POST /query — question=%r top_k=%d model=%s mode=%s",
+        body.question, body.top_k, body.model, body.mode,
     )
     t0 = time.perf_counter()
 
     try:
-        # use_hybrid=True: quando a pergunta cita estação (ex.: "SM_1"), filtra
+        # mode="filtrada" (padrão): quando a pergunta cita estação (ex.: "SM_1"), filtra
         # no Milvus por station antes da busca vetorial. Quando não cita,
-        # cai automaticamente para busca vetorial pura — estritamente melhor.
+        # cai automaticamente para busca vetorial pura.
         result = rag_query(
-            body.question, top_k=body.top_k, model=body.model, use_hybrid=True,
+            body.question, top_k=body.top_k, model=body.model, mode=body.mode,
         )
     except ConnectionError as exc:
         logger.error("Serviço indisponível: %s", exc)
@@ -89,6 +96,8 @@ def query_endpoint(body: QueryRequest) -> QueryResponse:
         processing_time_s=elapsed,
         model_used=result["model_used"],
         token_usage=result.get("token_usage", {}),
+        mode=result.get("mode", body.mode),
+        parsed=result.get("parsed", {}),
     )
 
 
@@ -101,7 +110,9 @@ def health() -> dict:
 def metadata() -> dict:
     return {
         "model": os.getenv("LLM_MODEL", "qwen2.5:7b"),
-        "available_models": ["qwen2.5:7b", "llama3.2:3b", "gemini"],
+        # Geradores avaliados no TCC (todos locais, via Ollama) + llama3.2:3b (alternativa leve, não avaliada).
+        "available_models": ["qwen2.5:7b", "qwen3.5:9b", "gemma4:e4b", "llama3.2:3b"],
+        "available_modes": ["filtrada", "vetorial", "sem_rag"],
         "embed_model": EMBED_MODEL_NAME,
         "vector_db": "milvus",
         "collection": COLLECTION_NAME,

@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastembed import TextEmbedding
 from pymilvus import Collection, connections
 
+from rag.lexical import BM25Index, hit_text, rerank_bm25
 from rag.query_parser import QueryMetadata, parse_query
 
 load_dotenv()
@@ -59,6 +60,34 @@ def _embed_query(query: str) -> list[float]:
     return embeddings[0].tolist()
 
 
+_lexical_index: BM25Index | None = None
+
+
+def _get_lexical_index() -> BM25Index:
+    """Índice BM25 sobre TODOS os episódios da coleção (IDF do corpus inteiro; carregado uma vez)."""
+    global _lexical_index
+    if _lexical_index is None:
+        rows = _get_collection().query(
+            expr="event_id != ''",
+            output_fields=["station", "current_task", "current_sub_task", "log_text"],
+            limit=16384,
+        )
+        _lexical_index = BM25Index([hit_text(r) for r in rows])
+        logger.info("Índice BM25 construído sobre %d episódios.", len(rows))
+    return _lexical_index
+
+
+def rerank_enabled() -> bool:
+    """Reranking lexical (BM25 + RRF) é opt-in: RAG_RERANK=bm25. Padrão = desligado."""
+    return os.getenv("RAG_RERANK", "").strip().lower() == "bm25"
+
+
+def _maybe_rerank(query: str, hits: list[dict]) -> list[dict]:
+    if not rerank_enabled() or len(hits) < 2:
+        return hits
+    return rerank_bm25(query, hits, _get_lexical_index())
+
+
 def retrieve(query: str, top_k: int = 5) -> list[dict]:
     """Search Milvus for the top_k log events most similar to query.
 
@@ -92,7 +121,7 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
         output_fields=_OUTPUT_FIELDS,
     )
 
-    raw_hits = [_hit_to_dict(hit) for hit in results[0]]
+    raw_hits = _maybe_rerank(query, [_hit_to_dict(hit) for hit in results[0]])
 
     hits = _deduplicate_hits(raw_hits, top_k)
     logger.info("Recuperados %d resultados (de %d brutos pré-dedup).", len(hits), len(raw_hits))
@@ -255,7 +284,7 @@ def retrieve_hybrid(query: str, top_k: int = 5) -> list[dict]:
             raw_hits = _search_with_expr(
                 collection, embedding, f"station == '{station}'", fetch_k,
             )
-        return _deduplicate_hits(raw_hits, top_k)
+        return _deduplicate_hits(_maybe_rerank(query, raw_hits), top_k)
 
     per_station = max(2, top_k // len(md.stations) + 1) * DEDUP_OVERFETCH_FACTOR
     pooled: dict[str, dict] = {}
@@ -272,4 +301,4 @@ def retrieve_hybrid(query: str, top_k: int = 5) -> list[dict]:
                 pooled[eid] = h
 
     merged = sorted(pooled.values(), key=lambda h: h["score"], reverse=True)
-    return _deduplicate_hits(merged, top_k)
+    return _deduplicate_hits(_maybe_rerank(query, merged), top_k)

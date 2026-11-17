@@ -36,8 +36,6 @@ MINIO_ROOT_PASSWORD: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 BUCKET:  str = "silver"
 S3_KEY:  str = "smartfactory/smartfactory_logs.parquet"
 
-CHUNK_SIZE: int = 50_000
-
 
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
 

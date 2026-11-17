@@ -1,0 +1,97 @@
+{
+ "n_rotuladas": 15,
+ "n_recusas_R": 0,
+ "criterio_primario": "Spearman(humano ordinal, faithfulness contínua do juiz)",
+ "juiz_vs_humano": {
+  "spearman": [
+   0.8486684247915054,
+   0.621614920581103,
+   0.9393478612992419
+  ],
+  "A_totalmente_suportada": {
+   "corte": "humano==2 vs juiz>=0,999",
+   "kappa": [
+    0.44444444444444453,
+    -4.163336342344338e-16,
+    1.0
+   ],
+   "acuracia_balanceada": [
+    0.6666666666666666,
+    0.5,
+    1.0
+   ],
+   "acuracia": [
+    0.8666666666666667,
+    0.6666666666666666,
+    1.0
+   ],
+   "matriz": {
+    "ambos_pos": 1,
+    "so_humano": 2,
+    "so_juiz": 0,
+    "ambos_neg": 12
+   }
+  },
+  "B_maioria_suportada": {
+   "corte": "humano>=1 vs juiz>=0,5",
+   "kappa": [
+    0.7321428571428572,
+    0.3243243243243242,
+    1.0
+   ],
+   "acuracia_balanceada": [
+    0.8660714285714286,
+    0.6607142857142857,
+    1.0
+   ],
+   "acuracia": [
+    0.8666666666666667,
+    0.6666666666666666,
+    1.0
+   ],
+   "matriz": {
+    "ambos_pos": 7,
+    "so_humano": 1,
+    "so_juiz": 1,
+    "ambos_neg": 6
+   }
+  }
+ },
+ "recusas_juiz": {
+  "n_recusas_total": 70,
+  "faithfulness_juiz": {
+   "zero": 43,
+   "intermediaria": 20,
+   "um": 7,
+   "media": 0.2994897959183674
+  },
+  "n_nao_recusa_disponiveis": 74,
+  "cotas": {
+   "gemma4:e4b[estrito] | rag_filtrado": 10,
+   "gemma4:e4b[estrito] | rag_vetorial": 10,
+   "qwen2.5:7b[estrito] | rag_filtrado": 10,
+   "qwen2.5:7b[estrito] | rag_vetorial": 10,
+   "qwen3.5:9b[estrito] | rag_filtrado": 6,
+   "qwen3.5:9b[estrito] | rag_vetorial": 2
+  }
+ },
+ "minicheck": {
+  "n": 15,
+  "spearman_vs_humano": [
+   0.6723742994164559,
+   0.2938491545667569,
+   0.9015365953664598
+  ],
+  "kappa_vs_humano": [
+   0.7321428571428572,
+   0.3243243243243242,
+   1.0
+  ],
+  "spearman_vs_juiz": [
+   0.587914438694118,
+   0.12706841032807492,
+   0.8788692275018414
+  ]
+ },
+ "anotador": "ia_claude"
+}

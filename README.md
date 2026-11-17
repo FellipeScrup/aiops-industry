@@ -1,307 +1,186 @@
-# AIOps Industry — RAG para Análise de Logs de Fábrica Inteligente
+# AIOps Industry — RAG para diagnóstico em logs industriais
 
-> **TCC — Engenharia de Computação — Facens**
+> **TCC — Engenharia de Computação — Facens (2026)**
 
 **Autores:** Fellipe Scruph e João Victor de Oliveira  
 **Orientador:** Prof. Me. Adson Nogueira Alves
 
----
+Plataforma de **Retrieval-Augmented Generation (RAG)** para análise de logs de uma fábrica inteligente. O sistema transforma eventos NDJSON (10 Hz) em **episódios**, indexa-os em banco vetorial e responde perguntas em linguagem natural, comparando três condições:
 
-## Sobre
-
-Plataforma de Retrieval-Augmented Generation (RAG) voltada à análise de logs de eventos de uma fábrica inteligente. O sistema ingere eventos NDJSON em tempo real (10 Hz) do dataset **Smart Factory Logs** (14441997), indexa os padrões de operação em um banco vetorial e permite consultas em linguagem natural para auxiliar técnicos e engenheiros de manutenção no diagnóstico de anomalias.
-
-Em vez de reagir a códigos de alarme isolados, o sistema raciocina sobre o **estado operacional de cada estação**: qual tarefa estava sendo executada, por quanto tempo, e por que o estado `not ready` foi atingido.
+| Modo | O que faz |
+|---|---|
+| `filtrada` (proposta) | Busca vetorial + filtro por estação e janela temporal (±5 s) |
+| `vetorial` | Busca vetorial pura (baseline de recuperação) |
+| `sem_rag` | LLM sem episódios (controle) |
 
 ---
 
 ## Dataset
 
-**Smart Factory Logs — Zenodo 10.5281/zenodo.14441997** (Seiger, 2024)
+**Smart Factory Logs** — [Zenodo 10.5281/zenodo.14441997](https://doi.org/10.5281/zenodo.14441997) (Seiger, 2024)
 
-Sensores reais de uma fábrica de pequena escala (Indústria 4.0), coletados a 10 Hz de 7 estações, com os processos (armazenagem e produção) orquestrados por BPMN 2.0 / Camunda. Originalmente proposto para detecção de atividades de processo (García-Bañuelos et al., 2025, *Procedia Computer Science* 257, 856–863) e aqui reaproveitado para diagnóstico de falhas via RAG.
+Eventos a 10 Hz de 7 estações (VGR, HBW, OV, MM, SM, WT, EC), com processos BPMN/Camunda. Campos principais: `station`, `timestamp`, `current_state` (`ready` / `not ready`), `current_task`, `current_sub_task`, sensores (JSONB).
 
-Estações: VGR (robô de transporte), HBW (armazém vertical), OV (forno), MM (fresa), SM (separadora por cor), WT (esteira), EC (ambiente + câmera).
-
-Campos de cada evento NDJSON:
-
-| Campo | Descrição |
-|---|---|
-| `id` | UUID do evento |
-| `station` | Estação geradora: MM_1, EC_1, SM_1, HBW_1, OV_1, VGR_1, WT_1 |
-| `timestamp` | Timestamp UTC do evento (precisão 100ms) |
-| `current_state` | `"ready"` (disponível/ociosa) \| `"not ready"` (executando/ocupada) |
-| `current_task` | Descrição da tarefa em execução |
-| `current_task_duration` | Duração da tarefa atual em segundos |
-| `current_sub_task` | Sub-tarefa corrente |
-| Campos de sensor | Variáveis por estação (pos_x/y/z, speed, valve, etc.) — armazenados como JSONB |
-
-**Distribuição (split de treino):** 119.845 ready / 20.056 not ready | 22 tarefas distintas | 61 sub-tarefas  
-**Total de eventos:** ~408k (training: 139.901 + test: 268.936)
+~408k eventos → **485 episódios** no log de treino (415 `not ready`, 7 anomalias de duração). Só episódios `not ready` entram no índice por padrão.
 
 ---
 
 ## Stack
 
-- **Python 3.12** — linguagem principal
-- **Docker Compose** — orquestração local dos serviços
-- **PostgreSQL** — Silver layer: tabela `smartfactory_logs` (eventos) + Gold `smartfactory_episodes` (episódios)
-- **MinIO** — Data lake S3-compatible: buckets `bronze`, `silver`, `gold`
-- **Milvus** — Vector store: banco vetorial com embeddings dos episódios (768d, COSINE)
-- **fastembed** — embeddings locais via `nomic-ai/nomic-embed-text-v1.5`
-- **Ollama** — inferência local de LLMs (Llama 3.2, Qwen 2.5)
-- **Gemini API** — backend LLM alternativo via `GEMINI_API_KEY`
-- **FastAPI** — API REST
-- **Gradio** — interface de demonstração
+- **Python 3.12** · **Docker Compose** · **Makefile**
+- **PostgreSQL** — Silver (`smartfactory_logs`) e Gold (`smartfactory_episodes`)
+- **MinIO** — data lake (`bronze` / `silver` / `gold`)
+- **Milvus** — índice vetorial (COSINE, 768d)
+- **fastembed** — `nomic-ai/nomic-embed-text-v1.5`
+- **Ollama (local)** — geração: `qwen2.5:7b`, `qwen3.5:9b`, `gemma4:e4b` (+ `llama3.2:3b` opcional)
+- **FastAPI** (`:8001`) · **Gradio** (`:7860`)
 
 ---
 
 ## Arquitetura Medallion
 
 ```
-MinIO bronze/             PostgreSQL Silver          Gold (Postgres + Milvus)
-─────────────────         ──────────────────         ────────────────────────
-smartfactory/             smartfactory_logs          smartfactory_episodes
-  logs/training.txt ─►      id (PK)          ─agrega─►  episode_id (PK)
-  logs/test.txt             station                     station
-  bpmn/camunda-             event_timestamp             start_ts / end_ts
-        activity.json       current_state               duration_s
-                  ─►        current_task                is_anomaly
-MinIO silver/               current_task_duration       sensors_changed
-  smartfactory/             current_sub_task            text (narrativa PT)
-    smartfactory_logs       sensors (JSONB)                  │
-      .parquet (408k)       split (train/test)               ▼ embed (nomic 768d)
-                                                       Milvus smartfactory_episodes
-                                                         (episódios not ready)
+NDJSON bruto → MinIO bronze → Postgres Silver → episódios Gold → Milvus
+     upload_bronze   parse_silver    parse_episodes     embed_gold
 ```
 
-A camada Gold agrega os eventos brutos de 10 Hz em **episódios** com início,
-fim, duração e detecção de anomalia por sub-tarefa (`ingestion/parse_episodes.py`),
-e só então os embeda no Milvus (`ingestion/embed_gold.py`). Ver
-[Camada de Episódios](#camada-de-episódios-silver--gold).
-
-### Fluxo de dados completo
+**Anomalia de duração** (por sub-tarefa, episódios `not ready`):
 
 ```
-upload_bronze.py   parse_silver.py     parse_episodes.py    embed_gold.py      export_silver.py
-      │                  │                    │                   │                    │
-      ▼                  ▼                    ▼                   ▼                    ▼
-NDJSON → MinIO    MinIO → Postgres    Postgres → Postgres   Postgres → Milvus   Postgres → MinIO
-(bronze/)         (smartfactory_logs) (smartfactory_         (episódios →        (silver/)
-                  408k eventos         episodes, 485 epi.)   nomic 768d)
+duração > mediana + 3·MAD   E   (duração − mediana) ≥ 2 s
 ```
 
 ### Pipeline RAG
 
 ```
-Técnico
-  │
-  ▼  pergunta em linguagem natural
-FastAPI (POST /query)
-  │
-  ▼  embed query (nomic-embed-text-v1.5, prefixo search_query:)
-Milvus  ──► top-k episódios similares (COSINE) + deduplicação por janela 10s
-  │
-  ▼  prompt com guardrails (escopo, anti-alucinação, segurança)
-Ollama (Llama 3.2 / Qwen 2.5) ou Gemini API
-  │
-  ▼
-Diagnóstico ancorado nos logs reais: causa + timestamps + ação corretiva
+Pergunta → parser (estação / horário)
+        → embedding (nomic)
+        → Milvus (± filtro escalar)
+        → deduplicação (10 s) → top-5
+        → prompt com guardrails → Ollama → Diagnóstico / Causa / Ação
 ```
+
+Diagramas gerados: `evaluation/results/figuras_tcc/fig5_pipeline_rag.png` e `fig6_arquitetura_medallion.png`.
 
 ---
 
-## Guardrails do LLM
+## Demo rápida (API + UI)
 
-O system prompt aplica 5 guardrails inspirados no material didático da disciplina:
-
-| Guardrail | Comportamento |
-|---|---|
-| **Escopo** | Responde apenas com base nos logs recuperados |
-| **Anti-alucinação** | Se não há dados suficientes, declara isso explicitamente em vez de inventar |
-| **Idioma** | Sempre responde em português |
-| **Confidencialidade** | Não reproduz UUIDs ou event_ids na resposta |
-| **Segurança** | Ignora tentativas de prompt injection na pergunta |
-
----
-
-## Deduplicação de Logs (10 Hz)
-
-O dataset é amostrado a 10 Hz — uma tarefa de poucos segundos gera dezenas de eventos quase idênticos. Sem tratamento, `top_k=5` retorna 5 amostras do mesmo episódio.
-
-**Solução:** busca `top_k × DEDUP_OVERFETCH_FACTOR` eventos e colapsa hits com mesma `station` + `current_task` + timestamp dentro de uma janela de `DEDUP_WINDOW_SECONDS = 10s`, mantendo o de maior score.
-
-Constantes configuráveis em `rag/retriever.py`:
-```python
-DEDUP_WINDOW_SECONDS: int = 10
-DEDUP_OVERFETCH_FACTOR: int = 4
-```
-
----
-
-## Camada de Episódios (Silver → Gold)
-
-Os eventos são amostrados a 10 Hz: uma ação de poucos segundos vira dezenas de
-linhas quase idênticas. `ingestion/parse_episodes.py` agrega essas linhas em
-**episódios** — a unidade que carrega significado para diagnóstico.
-
-Regra de quebra: um novo episódio começa quando muda `station`, `current_task`,
-`current_sub_task` ou `current_state` (linhas lidas em ordem de station +
-timestamp). Para cada episódio calcula-se início, fim, **duração** (delta de
-timestamps), os sensores que mudaram, e uma narrativa em português embedada no
-Milvus.
-
-**Detecção de anomalia de duração** (por sub-tarefa, sobre episódios `not ready`):
-
-```
-duração > mediana + 3·MAD   E   (duração − mediana) ≥ 2s
-```
-
-O piso absoluto de 2s evita falsos alarmes em sub-tarefas muito consistentes
-(onde MAD ≈ 0). Episódios anômalos recebem `is_anomaly = True`.
-
-No log de treino: **139.901 eventos → 485 episódios** (415 `not ready`, 7
-anomalias). Só os episódios `not ready` são indexados por padrão
-(`READY_SAMPLE=0`), porque episódios ociosos sequestram perguntas como
-"por que a estação parou?".
-
----
-
-## Setup
-
-### Pré-requisitos
-
-- Docker Engine 24+ e Docker Compose v2
-- Python 3.12 e `make`
-- Dataset em `data/bronze/14441997/` (arquivos NDJSON)
-- ~8 GB de RAM livre (Milvus + Postgres + Ollama)
-
-### Aceleração por GPU (Ollama)
-
-O modelo qwen2.5:7b em CPU leva ~120s por pergunta; com GPU cai para
-~10s. Há dois caminhos suportados:
-
-- **Linux com GPU NVIDIA** (ex.: Fedora, Ubuntu): instale o
-  [`nvidia-container-toolkit`](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
-  O `docker-compose.yml` já reserva a GPU para o container `aiops-ollama`
-  — `make up` sobe Ollama com aceleração automaticamente.
-- **Windows/macOS com GPU AMD ou sem GPU dedicada**: o container Ollama
-  só roda em CPU (passthrough AMD em WSL é precário). Pare o container
-  (`docker compose stop ollama`) e instale o **Ollama nativo** do SO
-  (https://ollama.com/download) — ele detecta GPU AMD via Vulkan/DirectML.
-  O resto da stack (API/Gradio) continua apontando para `localhost:11434`.
-
-### Subindo a stack
+Pré-requisitos: Docker, Python 3.12, `make`, Ollama no **host** (recomendado no Windows/AMD), dataset em `data/bronze/14441997/`.
 
 ```bash
-# 1. Clone o repositório
-git clone <url-do-repo> && cd aiops-industry
-
-# 2. Crie o arquivo de variáveis de ambiente
 cp .env.example .env
-# Edite .env se quiser alterar senhas ou adicionar GEMINI_API_KEY
 
-# 3. Suba todos os serviços
+# 1) Infra (MinIO, Postgres, Milvus, Adminer…)
 make up
-```
 
-### Executando o pipeline Medallion completo
+# 2) Ollama no host (não use o profile docker ollama no Windows/AMD)
+ollama serve
+ollama pull qwen2.5:7b
+# opcional para a demo: ollama pull gemma4:e4b
 
-```bash
-# Pipeline completo de uma vez (DDL → Bronze → Silver → Gold)
+# 3) Pipeline de dados (só na 1ª vez ou após make clean)
 make medallion
 
-# Ou passo a passo:
-make create-tables    # DDL: cria tabela smartfactory_logs no PostgreSQL
-make ingest-bronze    # Bronze: NDJSON → s3://bronze/smartfactory/
-make ingest-silver    # Silver: MinIO bronze → PostgreSQL (408k eventos)
-make ingest-episodes  # Gold: agrega eventos → tabela smartfactory_episodes (485 epi.)
-make export-silver    # Exporta Silver: PostgreSQL → s3://silver/smartfactory/
-make embed            # Gold: episódios → Milvus (embeddings 768d)
-
-# RAG: testa uma query diretamente
-make rag-query QUERY="HBW_1 demorou muito tempo calibrando o motor 4. O que isso indica?"
-
-# RAG com retrieval híbrido (opt-in para avaliação comparativa)
-make rag-query QUERY="VGR_1 not ready during workpiece transport" FLAGS="--hybrid"
+# 4) API + interface (dois terminais)
+python -m venv .venv-eval
+.venv-eval/Scripts/pip install \
+  -r ingestion/requirements.txt \
+  -r rag/requirements.txt \
+  -r api/requirements.txt \
+  -r interface/requirements.txt \
+  -r evaluation/requirements.txt
+source .venv-eval/Scripts/activate   # Windows Git Bash
+make api                             # http://localhost:8001
+make ui                              # http://localhost:7860
 ```
 
-### Estrutura do MinIO após pipeline completo
+Na UI: escolha modelo, modo (`RAG com filtragem` / `vetorial` / `sem RAG`) e use os exemplos do golden set.
 
-```
-s3://bronze/smartfactory/
-  logs/training.txt           (57 MB — NDJSON raw 10Hz)
-  logs/test.txt               (110 MB — NDJSON raw 10Hz)
-  bpmn/camunda-activity.json  (1.3 MB — processo BPMN)
+### URLs
 
-s3://silver/smartfactory/
-  smartfactory_logs.parquet   (19 MB — 408k eventos normalizados)
-```
-
-A camada **Gold** (episódios) vive no PostgreSQL (`smartfactory_episodes`) e no
-Milvus (coleção `smartfactory_episodes`, embeddings 768d) — não há artefato
-exportado no MinIO `gold/`.
-
-### URLs dos serviços
-
-| Serviço | URL | Descrição |
-|---|---|---|
-| MinIO Console | http://localhost:9001 | Interface web do data lake (Bronze/Silver/Gold) |
-| MinIO API | http://localhost:9000 | Endpoint S3-compatible |
-| Adminer | http://localhost:8080 | UI web para o PostgreSQL (Silver/Gold) |
-| Milvus gRPC | localhost:19530 | Banco vetorial (episódios) |
-| Milvus métricas | http://localhost:9091 | Health/metrics do Milvus |
-| Ollama | http://localhost:11434 | Inferência local de LLMs (geração) |
-| API FastAPI | http://localhost:8001 | Endpoint `/query`, `/health`, `/metadata` |
-| Gradio UI | http://localhost:7860 | Interface de demonstração |
-
-**Credenciais padrão MinIO:** `minioadmin / minioadmin123`  
-**Credenciais padrão PostgreSQL:** host `localhost:5432`, usuário `aiops`, banco `aiops_industry`
-
-### Verificando a saúde dos serviços
+| Serviço | URL |
+|---|---|
+| Gradio UI | http://localhost:7860 |
+| FastAPI | http://localhost:8001 |
+| MinIO Console | http://localhost:9001 (`minioadmin` / `minioadmin123`) |
+| Adminer | http://localhost:8080 |
+| Ollama | http://localhost:11434 |
+| Milvus | `localhost:19530` |
 
 ```bash
-make status   # status resumido
-make logs     # logs em tempo real
-```
-
-### Parando e limpando
-
-```bash
-make down    # para containers (mantém volumes)
-make clean   # para containers e remove todos os dados
+make status
+make logs
+make down     # para containers (mantém volumes)
+make clean    # apaga volumes — exige reindexar
 ```
 
 ---
 
-## Estrutura do Repositório
+## Consulta via CLI / API
+
+```bash
+make rag-query QUERY="A calibração do motor 4 da HBW_1 às 10:29 foi atípica?"
+```
+
+```bash
+curl -s http://localhost:8001/query -H 'Content-Type: application/json' \
+  -d '{"question":"Por que a VGR_1 ficou not ready?","top_k":5,"model":"qwen2.5:7b","mode":"filtrada"}'
+```
+
+---
+
+## Avaliação
+
+Golden set objetivo de **24 perguntas** (8 factual, 8 multiestação, 8 causal). Três sistemas × geradores locais; juiz RAGAS de **outra família** (`phi4`).
+
+| Tipo | Métricas |
+|---|---|
+| Recuperação | Hit@5, MRR, Recall@5 |
+| Resposta | key facts, recusas, veredito de anomalia |
+| RAGAS | Faithfulness, Factual Correctness, Answer Relevancy, Context Recall |
+
+Figuras do TCC em `evaluation/results/figuras_tcc/`:
+
+- `fig1_ragas_por_gerador.png` — qualidade da resposta por modelo/sistema  
+- `fig2_recuperacao.png` — Hit/MRR/Recall (vetorial × filtrada × híbrida)  
+- `fig3_recusa.png` — respostas vs recusas indevidas  
+- `fig4_validacao_juiz.png` — sensibilidade do juiz  
+
+```bash
+make eval-generate MODEL=qwen2.5:7b
+make eval-ragas    MODEL=qwen2.5:7b JUDGE=phi4
+make eval-report   MODEL=qwen2.5:7b JUDGE=phi4
+make eval-compare
+```
+
+Scripts auxiliares: `evaluation/judge_validation.py`, `evaluation/make_figures.py`.
+
+---
+
+## Estrutura
 
 ```
 aiops-industry/
-├── ingestion/
-│   ├── create_tables.sql     # DDL da tabela smartfactory_logs
-│   ├── upload_bronze.py      # Bronze: NDJSON → s3://bronze/smartfactory/
-│   ├── parse_silver.py       # Silver: MinIO bronze → PostgreSQL
-│   ├── parse_episodes.py     # Gold: agrega eventos → smartfactory_episodes + anomalia
-│   ├── bpm_context.py        # enriquecimento BPM (atividade/processo/próxima estação)
-│   ├── embed_gold.py         # Gold: episódios → Milvus (nomic embeddings)
-│   ├── export_silver.py      # Exporta Silver: PostgreSQL → s3://silver/
-│   └── test_retrieval.py     # validação da busca vetorial
+├── api/main.py                 # FastAPI: /query, /health (modes filtrada|vetorial|sem_rag)
+├── interface/app.py            # Gradio: modelos, modos, episódios, parser
 ├── rag/
-│   ├── retriever.py          # busca vetorial no Milvus + deduplicação 10Hz
-│   ├── generator.py          # geração de resposta (Ollama / Gemini) + guardrails
-│   ├── pipeline.py           # orquestração retrieve → generate
-│   └── query_parser.py       # extração de estação/timestamp da query
-├── api/
-│   └── main.py               # FastAPI: POST /query, GET /health, GET /metadata
-├── interface/
-│   └── app.py                # Gradio UI
-└── infra/
-    └── docker/docker-compose.yml
+│   ├── pipeline.py             # orquestra retrieve → generate
+│   ├── retriever.py            # Milvus + filtro escalar + dedup
+│   ├── query_parser.py         # estação / timestamp / HH:MM
+│   ├── generator.py            # Ollama + guardrails (estrito/brando)
+│   └── lexical.py              # BM25 / RRF (ensaio híbrido)
+├── ingestion/                  # Medallion: bronze → silver → episodes → embed
+├── evaluation/                 # golden set, RAGAS, figuras
+├── infra/docker/docker-compose.yml
+└── Makefile
 ```
 
 ---
 
-## Status do Projeto
+## Observações
 
-**Sprint 8 — Dataset Smart Factory Logs (14441997) — NDJSON, 10Hz, 7 estações, 408k eventos**
+- No **Windows com GPU AMD**, use Ollama nativo (Vulkan). O serviço `ollama` no Compose fica no profile `ollama-docker` e **não** sobe com `make up`.
+- `OLLAMA_MODELS` deve apontar para `%USERPROFILE%\.ollama\models` (não para a pasta do usuário).
+- Material de monografia/apresentação **não** é versionado neste repositório.
+

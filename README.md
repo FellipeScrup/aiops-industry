@@ -1,5 +1,10 @@
 # AIOps Industry — RAG para diagnóstico em logs industriais
 
+> **TCC — Engenharia de Computação — Facens (2026)**
+
+**Autores:** Fellipe Scruph e João Victor de Oliveira  
+**Orientador:** Prof. Me. Adson Nogueira Alves
+
 Plataforma de **Retrieval-Augmented Generation (RAG)** para análise de logs de uma fábrica inteligente. O sistema transforma eventos NDJSON (10 Hz) em **episódios**, indexa-os em banco vetorial e responde perguntas em linguagem natural, comparando três condições:
 
 | Modo | O que faz |
@@ -178,3 +183,4 @@ aiops-industry/
 - No **Windows com GPU AMD**, use Ollama nativo (Vulkan). O serviço `ollama` no Compose fica no profile `ollama-docker` e **não** sobe com `make up`.
 - `OLLAMA_MODELS` deve apontar para `%USERPROFILE%\.ollama\models` (não para a pasta do usuário).
 - Material de monografia/apresentação **não** é versionado neste repositório.
+
